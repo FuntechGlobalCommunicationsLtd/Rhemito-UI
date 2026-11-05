@@ -741,32 +741,38 @@ export default function Dashboard() {
     const rows = (refAvail > 0 ? 1 : 0) + (schemeAvail > 0 ? 1 : 0);
     return count + (rows > 0 ? rows : 1);
   }, 0);
-  const earnedBalances = allWalletBalances.filter((b) => (b.earned ?? 0) > 0);
+  // Compute earned & used strictly from actual wallet credits (fallback to balance fields only when credits array is empty)
+  const walletCredits = rewards.data?.wallet.credits ?? [];
+  const activeWalletCredits = walletCredits.filter((c) => c.status !== "REVERSED");
+  const earnedByCur: Record<string, number> = {};
+  const usedByCur: Record<string, number> = {};
+  if (activeWalletCredits.length > 0) {
+    for (const c of activeWalletCredits) {
+      const cur = c.currency || rewardsCurrency;
+      earnedByCur[cur] = Number(((earnedByCur[cur] ?? 0) + Number(c.amount || 0)).toFixed(2));
+      if (c.status === "USED" || c.status === "PARTLY_USED") {
+        const usedAmt = Math.max(0, Number(c.amount || 0) - Number(c.remaining || 0));
+        usedByCur[cur] = Number(((usedByCur[cur] ?? 0) + usedAmt).toFixed(2));
+      } else if (!(cur in usedByCur)) {
+        usedByCur[cur] = 0;
+      }
+    }
+  } else {
+    for (const b of displayBonusBalances) {
+      earnedByCur[b.currency] = b.earned || b.available || 0;
+      usedByCur[b.currency] = b.used || 0;
+    }
+  }
+  const earnedEntries = Object.entries(earnedByCur).filter(([, v]) => v > 0);
   const totalBonusEarnedText =
-    earnedBalances.length > 0
-      ? earnedBalances.map((b) => formatMoney(b.earned, b.currency)).join(" + ")
-      : totalUnusedText || formatMoney(bonusBalance.earned || bonusBalance.available, rewardsCurrency);
-  const promoRedemptions =
-    (rewards.data?.wallet as { promo_redemptions?: { amount?: number; currency?: string }[] } | undefined)
-      ?.promo_redemptions ?? [];
-  const savedByCur: Record<string, number> = {};
-  for (const b of allWalletBalances) {
-    if ((b.used ?? 0) > 0) {
-      savedByCur[b.currency] = (savedByCur[b.currency] ?? 0) + b.used;
-    }
-  }
-  for (const p of promoRedemptions) {
-    const cur = (p.currency ?? rewardsCurrency).toUpperCase();
-    const amt = Math.abs(Number(p.amount ?? 0));
-    if (amt > 0) {
-      savedByCur[cur] = (savedByCur[cur] ?? 0) + amt;
-    }
-  }
-  const savedEntries = Object.entries(savedByCur).filter(([, v]) => v > 0);
-  const totalRewardsSavedText =
-    savedEntries.length > 0
-      ? savedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
-      : formatMoney(bonusBalance.used ?? 0, rewardsCurrency);
+    earnedEntries.length > 0
+      ? earnedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
+      : totalUnusedText || formatMoney(0, rewardsCurrency);
+  const usedEntries = Object.entries(usedByCur).filter(([, v]) => v > 0);
+  const totalBonusUsedText =
+    usedEntries.length > 0
+      ? usedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
+      : formatMoney(0, displayBonusBalances[0]?.currency ?? rewardsCurrency);
   const [referHighlighted, setReferHighlighted] = useState(false);
   const viewReferOffer = () => {
     document.getElementById("refer-earn")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1338,13 +1344,13 @@ export default function Dashboard() {
                       </div>
                       <div className="rounded-xl bg-teal-50 px-3.5 py-2.5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
-                          Saved with rewards
+                          Bonus used
                         </p>
                         <p
                           className="mt-0.5 font-display text-xl font-bold leading-none text-teal-700"
                           data-testid="dashboard-bonus-total-saved"
                         >
-                          {totalRewardsSavedText}
+                          {totalBonusUsedText}
                         </p>
                       </div>
                     </div>
