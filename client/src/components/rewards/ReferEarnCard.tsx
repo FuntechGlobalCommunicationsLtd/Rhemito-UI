@@ -209,39 +209,44 @@ export function ReferEarnCard({
 
         {/* Currency Corridor Switcher Pills — only applicable rules */}
         {!collapsed && allOffers.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              className="inline-flex flex-wrap items-center gap-1 rounded-full bg-slate-100 p-1"
-              data-testid="refer-corridor-pills"
-              aria-label="Select referral corridor rule"
-            >
-              {allOffers.map((o) => {
-                const isSelected = o.rule_id === activeOffer.rule_id && o.currency === activeOffer.currency;
-                const label = o.receive_currency
-                  ? `${o.currency} → ${o.receive_currency}`
-                  : `${o.currency} → ALL`;
-                return (
-                  <button
-                    key={`corridor-${o.rule_id}-${o.currency}-${o.receive_currency ?? "ALL"}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedRuleId(o.rule_id);
-                      setCopied(false);
-                    }}
-                    aria-pressed={isSelected}
-                    className={cn(
-                      "rounded-full px-4 py-1 text-[13px] sm:text-sm font-semibold transition-colors cursor-pointer",
-                      isSelected ? "bg-blue-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs sm:text-[13px] font-semibold text-slate-600" data-testid="refer-corridor-label">
+              Referrals are available for the following currency corridors:
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-full bg-slate-100 p-1"
+                data-testid="refer-corridor-pills"
+                aria-label="Select referral corridor rule"
+              >
+                {allOffers.map((o) => {
+                  const isSelected = o.rule_id === activeOffer.rule_id && o.currency === activeOffer.currency;
+                  const label = o.receive_currency
+                    ? `${o.currency} → ${o.receive_currency}`
+                    : `${o.currency} → ALL`;
+                  return (
+                    <button
+                      key={`corridor-${o.rule_id}-${o.currency}-${o.receive_currency ?? "ALL"}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRuleId(o.rule_id);
+                        setCopied(false);
+                      }}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        "rounded-full px-4 py-1 text-[13px] sm:text-sm font-semibold transition-colors cursor-pointer",
+                        isSelected ? "bg-blue-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="sr-only" data-testid="refer-currency-hint">
+                Click a currency corridor to see its rewards
+              </span>
             </div>
-            <span className="sr-only" data-testid="refer-currency-hint">
-              Click a currency corridor to see its rewards
-            </span>
           </div>
         )}
 
