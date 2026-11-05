@@ -768,10 +768,22 @@ export default function Dashboard() {
     earnedEntries.length > 0
       ? earnedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
       : totalUnusedText || formatMoney(0, rewardsCurrency);
-  const usedEntries = Object.entries(usedByCur).filter(([, v]) => v > 0);
-  const totalBonusUsedText =
-    usedEntries.length > 0
-      ? usedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
+  const promoRedemptions = (
+    (rewards.data?.wallet as { promo_redemptions?: { id?: string; amount?: number; currency?: string; transfer_id?: string }[] } | undefined)
+      ?.promo_redemptions ?? []
+  ).filter((p) => p.id !== "pr_1" && p.id !== "pr_2" && p.transfer_id !== "txn_promo_1" && p.transfer_id !== "txn_promo_2");
+  const savedByCur: Record<string, number> = { ...usedByCur };
+  for (const p of promoRedemptions) {
+    const cur = (p.currency ?? rewardsCurrency).toUpperCase();
+    const amt = Math.abs(Number(p.amount ?? 0));
+    if (amt > 0) {
+      savedByCur[cur] = Number(((savedByCur[cur] ?? 0) + amt).toFixed(2));
+    }
+  }
+  const savedEntries = Object.entries(savedByCur).filter(([, v]) => v > 0);
+  const totalRewardsSavedText =
+    savedEntries.length > 0
+      ? savedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
       : formatMoney(0, displayBonusBalances[0]?.currency ?? rewardsCurrency);
   const [referHighlighted, setReferHighlighted] = useState(false);
   const viewReferOffer = () => {
@@ -1344,13 +1356,13 @@ export default function Dashboard() {
                       </div>
                       <div className="rounded-xl bg-teal-50 px-3.5 py-2.5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
-                          Bonus used
+                          Saved with rewards
                         </p>
                         <p
                           className="mt-0.5 font-display text-xl font-bold leading-none text-teal-700"
                           data-testid="dashboard-bonus-total-saved"
                         >
-                          {totalBonusUsedText}
+                          {totalRewardsSavedText}
                         </p>
                       </div>
                     </div>
