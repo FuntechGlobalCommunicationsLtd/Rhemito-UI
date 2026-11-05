@@ -421,7 +421,8 @@ test.describe('Send Invoice MVP1 E2E', () => {
     await expect(row).toBeVisible();
 
     // Cancel modal requires a reason and shows the mandatory warning copy
-    await row.getByTestId(`button-cancel-${invoice.invoiceNumber}`).click();
+    await row.getByTestId(`button-actions-more-${invoice.invoiceNumber}`).click();
+    await page.getByTestId(`button-cancel-${invoice.invoiceNumber}`).click();
     const dialog = page.getByTestId('dialog-cancel-invoice');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId('cancel-summary')).toContainText(invoice.invoiceNumber);
@@ -521,7 +522,8 @@ test.describe('Send Invoice MVP1 E2E', () => {
     await page.goto('/?type=invoice');
     const row = page.getByTestId(`row-invoice-${invoice.invoiceNumber}`);
     await expect(row.getByText('Overdue', { exact: true })).toBeVisible();
-    await expect(row.getByTestId(`button-cancel-${invoice.invoiceNumber}`)).toBeVisible();
+    await row.getByTestId(`button-actions-more-${invoice.invoiceNumber}`).click();
+    await expect(page.getByTestId(`button-cancel-${invoice.invoiceNumber}`)).toBeVisible();
   });
 
   test('Dashboard search narrows invoice rows and cancelled status is reflected', async ({ page }) => {

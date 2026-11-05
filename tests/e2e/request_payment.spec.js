@@ -673,6 +673,10 @@ test.describe('Request Money E2E', () => {
     await expect(row).toBeVisible();
     await expect(row.getByText('Sent', { exact: true })).toBeVisible();
 
+    const moreBtn = page.getByTestId(`button-actions-more-${created.request.requestNumber}`);
+    await expect(moreBtn).toBeVisible();
+    await moreBtn.click();
+
     const cancelBtn = page.getByTestId(`button-cancel-${created.request.requestNumber}`);
     await expect(cancelBtn).toBeVisible();
     await cancelBtn.click();
@@ -690,6 +694,7 @@ test.describe('Request Money E2E', () => {
     await expect(row).toBeVisible();
 
     // Cancel again and confirm — the row flips to Cancelled via the real cancel API
+    await moreBtn.click();
     await cancelBtn.click();
     await expect(dialog).toBeVisible();
     await dialog.getByTestId('button-dialog-confirm-cancel').click();
@@ -731,6 +736,9 @@ test.describe('Request Money E2E', () => {
     const created = await createRequestViaApi(pageRequest, user);
 
     await page.goto('/?type=receive_money');
+    const moreBtn = page.getByTestId(`button-actions-more-${created.request.requestNumber}`);
+    await expect(moreBtn).toBeVisible();
+    await moreBtn.click();
     const copyBtn = page.getByTestId(`button-copy-link-${created.request.requestNumber}`);
     await expect(copyBtn).toBeVisible();
 
