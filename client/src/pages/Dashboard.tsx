@@ -727,20 +727,6 @@ export default function Dashboard() {
   const availableBalances = allWalletBalances.filter((b) => b.available > 0);
   const displayBonusBalances = availableBalances.length > 0 ? availableBalances : bonusBalance.available > 0 ? [bonusBalance] : [];
   const totalUnusedText = displayBonusBalances.map((b) => formatMoney(b.available, b.currency)).join(" + ");
-  const hasReferralCreditAvailable = displayBonusBalances.some(
-    (bal) =>
-      Array.isArray(bal.by_source) &&
-      bal.by_source.some((s) => s && typeof s === "object" && s.credit_source === "REFERRAL" && (s.available ?? 0) > 0),
-  );
-  const totalBonusRows = displayBonusBalances.reduce((count, bal) => {
-    const bySource = Array.isArray(bal.by_source) ? bal.by_source : [];
-    const refAvail = bySource.find((s) => s && typeof s === "object" && s.credit_source === "REFERRAL")?.available ?? 0;
-    const schemeAvail = bySource
-      .filter((s) => s && typeof s === "object" && (s.credit_source === "SCHEME" || s.credit_source === "MANUAL"))
-      .reduce((sum, s) => sum + (s.available || 0), 0);
-    const rows = (refAvail > 0 ? 1 : 0) + (schemeAvail > 0 ? 1 : 0);
-    return count + (rows > 0 ? rows : 1);
-  }, 0);
   // Compute earned & used strictly from actual wallet credits (fallback to balance fields only when credits array is empty)
   const walletCredits = rewards.data?.wallet.credits ?? [];
   const activeWalletCredits = walletCredits.filter((c) => c.status !== "REVERSED");
@@ -1276,68 +1262,6 @@ export default function Dashboard() {
                         );
                       })}
 
-                      {totalBonusRows === 1 && (
-                        <div
-                          data-testid="bonus-companion-row"
-                          className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3.5 flex items-center justify-between gap-3.5"
-                        >
-                          {!hasReferralCreditAvailable && rewards.data?.offer ? (
-                            <>
-                              <div className="flex items-center gap-3.5 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                                  <Users className="w-5 h-5" aria-hidden="true" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-medium text-slate-700">Referral bonus</p>
-                                    <span className="rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-                                      +{formatMoney(rewards.data.offer.referrer_reward, rewards.data.offer.currency)} / friend
-                                    </span>
-                                  </div>
-                                  <p className="text-[13px] text-slate-500 mt-0.5">
-                                    Invite friends with your link to earn{" "}
-                                    <strong className="font-semibold text-slate-700">
-                                      {formatMoney(rewards.data.offer.referrer_reward, rewards.data.offer.currency)}
-                                    </strong>{" "}
-                                    when they send{" "}
-                                    {formatMoney(rewards.data.offer.floor, rewards.data.offer.currency)}+
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={viewReferOffer}
-                                className="inline-flex items-center gap-1 text-[13px] sm:text-sm font-semibold text-blue-600 hover:text-blue-700 shrink-0 cursor-pointer"
-                              >
-                                <span>Share link</span>
-                                <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-center gap-3.5 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                                  <Sparkles className="w-5 h-5" aria-hidden="true" />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-slate-700">Member bonus schemes</p>
-                                  <p className="text-[13px] text-slate-500 mt-0.5">
-                                    Earn automatic loyalty &amp; threshold bonus credits on qualifying transfers
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setLocation("/bonus-discounts")}
-                                className="inline-flex items-center gap-1 text-[13px] sm:text-sm font-semibold text-blue-600 hover:text-blue-700 shrink-0 cursor-pointer"
-                              >
-                                <span>View offers</span>
-                                <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
 
