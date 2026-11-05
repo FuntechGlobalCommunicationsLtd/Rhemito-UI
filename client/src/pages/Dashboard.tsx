@@ -723,9 +723,50 @@ export default function Dashboard() {
   const rewards = useRewards();
   const rewardsCurrency = rewards.data?.currency ?? "GBP";
   const bonusBalance = balanceFor(rewards.data?.wallet, rewardsCurrency);
-  const availableBalances = (rewards.data?.wallet.balances ?? []).filter((b) => b.available > 0);
+  const allWalletBalances = rewards.data?.wallet.balances ?? [];
+  const availableBalances = allWalletBalances.filter((b) => b.available > 0);
   const displayBonusBalances = availableBalances.length > 0 ? availableBalances : bonusBalance.available > 0 ? [bonusBalance] : [];
   const totalUnusedText = displayBonusBalances.map((b) => formatMoney(b.available, b.currency)).join(" + ");
+  const hasReferralCreditAvailable = displayBonusBalances.some(
+    (bal) =>
+      Array.isArray(bal.by_source) &&
+      bal.by_source.some((s) => s && typeof s === "object" && s.credit_source === "REFERRAL" && (s.available ?? 0) > 0),
+  );
+  const totalBonusRows = displayBonusBalances.reduce((count, bal) => {
+    const bySource = Array.isArray(bal.by_source) ? bal.by_source : [];
+    const refAvail = bySource.find((s) => s && typeof s === "object" && s.credit_source === "REFERRAL")?.available ?? 0;
+    const schemeAvail = bySource
+      .filter((s) => s && typeof s === "object" && (s.credit_source === "SCHEME" || s.credit_source === "MANUAL"))
+      .reduce((sum, s) => sum + (s.available || 0), 0);
+    const rows = (refAvail > 0 ? 1 : 0) + (schemeAvail > 0 ? 1 : 0);
+    return count + (rows > 0 ? rows : 1);
+  }, 0);
+  const earnedBalances = allWalletBalances.filter((b) => (b.earned ?? 0) > 0);
+  const totalBonusEarnedText =
+    earnedBalances.length > 0
+      ? earnedBalances.map((b) => formatMoney(b.earned, b.currency)).join(" + ")
+      : totalUnusedText || formatMoney(bonusBalance.earned || bonusBalance.available, rewardsCurrency);
+  const promoRedemptions =
+    (rewards.data?.wallet as { promo_redemptions?: { amount?: number; currency?: string }[] } | undefined)
+      ?.promo_redemptions ?? [];
+  const savedByCur: Record<string, number> = {};
+  for (const b of allWalletBalances) {
+    if ((b.used ?? 0) > 0) {
+      savedByCur[b.currency] = (savedByCur[b.currency] ?? 0) + b.used;
+    }
+  }
+  for (const p of promoRedemptions) {
+    const cur = (p.currency ?? rewardsCurrency).toUpperCase();
+    const amt = Math.abs(Number(p.amount ?? 0));
+    if (amt > 0) {
+      savedByCur[cur] = (savedByCur[cur] ?? 0) + amt;
+    }
+  }
+  const savedEntries = Object.entries(savedByCur).filter(([, v]) => v > 0);
+  const totalRewardsSavedText =
+    savedEntries.length > 0
+      ? savedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
+      : formatMoney(bonusBalance.used ?? 0, rewardsCurrency);
   const [referHighlighted, setReferHighlighted] = useState(false);
   const viewReferOffer = () => {
     document.getElementById("refer-earn")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1216,17 +1257,112 @@ export default function Dashboard() {
                           />
                         );
                       })}
+
+                      {totalBonusRows === 1 && (
+                        <div
+                          data-testid="bonus-companion-row"
+                          className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3.5 flex items-center justify-between gap-3.5"
+                        >
+                          {!hasReferralCreditAvailable && rewards.data?.offer ? (
+                            <>
+                              <div className="flex items-center gap-3.5 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                  <Users className="w-5 h-5" aria-hidden="true" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-medium text-slate-700">Referral bonus</p>
+                                    <span className="rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                                      +{formatMoney(rewards.data.offer.referrer_reward, rewards.data.offer.currency)} / friend
+                                    </span>
+                                  </div>
+                                  <p className="text-[13px] text-slate-500 mt-0.5">
+                                    Invite friends with your link to earn{" "}
+                                    <strong className="font-semibold text-slate-700">
+                                      {formatMoney(rewards.data.offer.referrer_reward, rewards.data.offer.currency)}
+                                    </strong>{" "}
+                                    when they send{" "}
+                                    {formatMoney(rewards.data.offer.floor, rewards.data.offer.currency)}+
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={viewReferOffer}
+                                className="inline-flex items-center gap-1 text-[13px] sm:text-sm font-semibold text-blue-600 hover:text-blue-700 shrink-0 cursor-pointer"
+                              >
+                                <span>Share link</span>
+                                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-3.5 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                                  <Sparkles className="w-5 h-5" aria-hidden="true" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-700">Member bonus schemes</p>
+                                  <p className="text-[13px] text-slate-500 mt-0.5">
+                                    Earn automatic loyalty &amp; threshold bonus credits on qualifying transfers
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setLocation("/bonus-discounts")}
+                                className="inline-flex items-center gap-1 text-[13px] sm:text-sm font-semibold text-blue-600 hover:text-blue-700 shrink-0 cursor-pointer"
+                              >
+                                <span>View offers</span>
+                                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setLocation("/bonus-discounts")}
-                    className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 self-start cursor-pointer"
-                  >
-                    <span>Manage in Reward$</span>
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </button>
+                  <div className="flex flex-col gap-2.5 pt-1" data-testid="dashboard-bonus-footer">
+                    <div className="grid grid-cols-2 gap-2.5" data-testid="dashboard-bonus-stats">
+                      <div className="rounded-xl bg-slate-50 px-3.5 py-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Total bonus earned
+                        </p>
+                        <p
+                          className="mt-0.5 font-display text-xl font-bold leading-none text-slate-900"
+                          data-testid="dashboard-bonus-total-earned"
+                        >
+                          {totalBonusEarnedText}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-teal-50 px-3.5 py-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
+                          Saved with rewards
+                        </p>
+                        <p
+                          className="mt-0.5 font-display text-xl font-bold leading-none text-teal-700"
+                          data-testid="dashboard-bonus-total-saved"
+                        >
+                          {totalRewardsSavedText}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm text-slate-500">
+                        Apply as <strong className="font-semibold text-slate-700">Pay less</strong> or{" "}
+                        <strong className="font-semibold text-slate-700">Send more</strong> on Step 1
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setLocation("/bonus-discounts")}
+                        className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                      >
+                        <span>Manage in Reward$</span>
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
                 </Card>
               )}
 
