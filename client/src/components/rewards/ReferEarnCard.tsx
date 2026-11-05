@@ -42,7 +42,6 @@ function OfferSentence({ text }: { text: string }) {
 export function ReferEarnCard({
   offer,
   offers,
-  sendCurrencies,
   referrals,
   summary,
   isLoading,
@@ -106,8 +105,6 @@ export function ReferEarnCard({
   const additionalOffers = (offers ?? []).filter((o) => o.rule_id !== offer.rule_id || o.currency !== offer.currency);
   const allOffers = [offer, ...additionalOffers];
   const activeOffer = (selectedRuleId !== null ? allOffers.find((o) => o.rule_id === selectedRuleId) : null) ?? offer;
-  const locationCurrencies = sendCurrencies && sendCurrencies.length > 0 ? sendCurrencies : undefined;
-  const hasCorridorRules = allOffers.length > 1 && new Set(allOffers.map((o) => o.currency)).size < allOffers.length;
 
   const isMultiCurrency = allOffers.length > 1;
   const rawCode = activeOffer.referral_code ?? offer.referral_code ?? "";
@@ -210,77 +207,40 @@ export function ReferEarnCard({
           </div>
         </div>
 
-        {/* Currency / Corridor Switcher Pills */}
-        {!collapsed && ((locationCurrencies && locationCurrencies.length > 1) || hasCorridorRules) && (
+        {/* Currency Corridor Switcher Pills — only applicable rules */}
+        {!collapsed && allOffers.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            {locationCurrencies && locationCurrencies.length > 1 && (
-              <div
-                className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-1"
-                data-testid="refer-send-currencies"
-                aria-label="Applicable send currencies"
-              >
-                {locationCurrencies.map((cur) => {
-                  const ruleForCur = allOffers.find((o) => o.currency === cur);
-                  const hasActiveRule = Boolean(ruleForCur);
-                  const isSelected = activeOffer.currency === cur && hasActiveRule;
-                  return (
-                    <button
-                      key={cur}
-                      type="button"
-                      disabled={!hasActiveRule}
-                      onClick={() => {
-                        if (ruleForCur) {
-                          setSelectedRuleId(ruleForCur.rule_id);
-                          setCopied(false);
-                        }
-                      }}
-                      aria-pressed={isSelected}
-                      className={cn(
-                        "rounded-full px-4 py-1 text-[13px] sm:text-sm font-semibold transition-colors",
-                        isSelected
-                          ? "bg-blue-600 text-white shadow-2xs cursor-pointer"
-                          : hasActiveRule
-                            ? "text-slate-600 hover:text-slate-900 cursor-pointer"
-                            : "text-slate-400 cursor-default",
-                      )}
-                    >
-                      {cur}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {hasCorridorRules && (
-              <div
-                className="inline-flex flex-wrap items-center gap-1 rounded-full bg-slate-100 p-1"
-                data-testid="refer-corridor-pills"
-                aria-label="Select referral corridor rule"
-              >
-                {allOffers.map((o) => {
-                  const isSelected = o.rule_id === activeOffer.rule_id;
-                  const label = o.receive_currency ? `${o.currency} → ${o.receive_currency}` : o.currency;
-                  return (
-                    <button
-                      key={`corridor-${o.rule_id}`}
-                      type="button"
-                      onClick={() => {
-                        setSelectedRuleId(o.rule_id);
-                        setCopied(false);
-                      }}
-                      aria-pressed={isSelected}
-                      className={cn(
-                        "rounded-full px-4 py-1 text-[13px] sm:text-sm font-semibold transition-colors cursor-pointer",
-                        isSelected ? "bg-blue-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900",
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div
+              className="inline-flex flex-wrap items-center gap-1 rounded-full bg-slate-100 p-1"
+              data-testid="refer-corridor-pills"
+              aria-label="Select referral corridor rule"
+            >
+              {allOffers.map((o) => {
+                const isSelected = o.rule_id === activeOffer.rule_id && o.currency === activeOffer.currency;
+                const label = o.receive_currency
+                  ? `${o.currency} → ${o.receive_currency}`
+                  : `${o.currency} → ALL`;
+                return (
+                  <button
+                    key={`corridor-${o.rule_id}-${o.currency}-${o.receive_currency ?? "ALL"}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRuleId(o.rule_id);
+                      setCopied(false);
+                    }}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      "rounded-full px-4 py-1 text-[13px] sm:text-sm font-semibold transition-colors cursor-pointer",
+                      isSelected ? "bg-blue-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
             <span className="sr-only" data-testid="refer-currency-hint">
-              Click a currency to see its rewards
+              Click a currency corridor to see its rewards
             </span>
           </div>
         )}
@@ -427,11 +387,13 @@ export function ReferEarnCard({
           {additionalOffers.length > 0 && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Applicable referral rules by send currency
+                Applicable referral rules by currency corridor
               </p>
               {allOffers.map((o) => (
-                <div key={`dialog-${o.rule_id}-${o.currency}`} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="mt-0.5 shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-bold text-blue-800">{o.currency}</span>
+                <div key={`dialog-${o.rule_id}-${o.currency}-${o.receive_currency ?? "ALL"}`} className="flex items-start gap-2 text-sm text-slate-700">
+                  <span className="mt-0.5 shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-bold text-blue-800">
+                    {o.receive_currency ? `${o.currency} → ${o.receive_currency}` : `${o.currency} → ALL`}
+                  </span>
                   <span>{o.text}</span>
                 </div>
               ))}
