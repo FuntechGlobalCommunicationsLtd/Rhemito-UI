@@ -1261,7 +1261,54 @@ export default function Dashboard() {
                           />
                         );
                       })}
+                    </div>
 
+                    {/* Fintech Redemption Modes Split Box — Pay less vs. Send more */}
+                    <div className="flex flex-col gap-1.5" data-testid="dashboard-bonus-redemption-modes">
+                      <p className="text-xs sm:text-[13px] font-semibold text-slate-600">
+                        Two ways to redeem your {totalUnusedText} credit on Step 1 of Send Money:
+                      </p>
+                      <div className="rounded-2xl bg-[#EEF4FF] border border-blue-100/80 p-3.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-0 sm:divide-x sm:divide-slate-200/90">
+                          <button
+                            type="button"
+                            onClick={() => setLocation("/send-money")}
+                            className="text-left sm:pr-3.5 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700">
+                                <ArrowDownLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                                Pay less
+                              </span>
+                              <span className="rounded-full bg-white/90 border border-blue-200/80 px-2 py-0.5 text-[11px] font-bold text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                Save {totalUnusedText}
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-xs sm:text-[13px] leading-relaxed text-slate-600">
+                              Deduct <strong className="font-semibold text-slate-900">{totalUnusedText}</strong> straight off the total amount you pay at checkout.
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLocation("/send-money")}
+                            className="text-left sm:pl-3.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-slate-200/80 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-teal-800">
+                                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                                Send more
+                              </span>
+                              <span className="rounded-full bg-white/90 border border-teal-200/80 px-2 py-0.5 text-[11px] font-bold text-teal-700 group-hover:bg-teal-700 group-hover:text-white transition-colors">
+                                +{totalUnusedText} extra
+                              </span>
+                            </div>
+                            <p className="mt-1.5 text-xs sm:text-[13px] leading-relaxed text-slate-600">
+                              Add <strong className="font-semibold text-slate-900">{totalUnusedText}</strong> on top so your recipient receives extra at no cost to you.
+                            </p>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1292,8 +1339,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm text-slate-500">
-                        Apply as <strong className="font-semibold text-slate-700">Pay less</strong> or{" "}
-                        <strong className="font-semibold text-slate-700">Send more</strong> on Step 1
+                        Select your preferred option on Step 1 when sending money
                       </p>
                       <button
                         type="button"
