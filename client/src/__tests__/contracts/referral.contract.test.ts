@@ -408,10 +408,11 @@ describe("Refer & Earn card", () => {
     view.unmount();
     const usdOffer = { ...OFFER, rule_id: 2, currency: "USD", text: "You get $10.00 and your friend gets $20.00 in bonus credit when they send $100.00 or more." };
     const multiCur = card({ offer: OFFER, offers: [OFFER, usdOffer], sendCurrencies: ["GBP", "USD", "EUR"] });
-    expect(multiCur.getByTestId("refer-send-currencies").textContent).toBe("GBPUSDEUR");
+    expect(multiCur.getByTestId("refer-corridor-pills").textContent).toBe("GBP → ALLUSD → ALL");
+    expect(multiCur.queryByTestId("refer-send-currencies")).toBeNull();
     expect(multiCur.getByTestId("refer-currency-hint").textContent).toContain("Click a currency");
     expect(multiCur.queryByTestId("refer-currency-offers")).toBeNull();
-    fireEvent.click(multiCur.getByRole("button", { name: "USD" }));
+    fireEvent.click(multiCur.getByRole("button", { name: "USD → ALL" }));
     expect(multiCur.getByTestId("refer-offer-text").textContent).toBe(usdOffer.text);
     multiCur.unmount();
     const ngn = card({ offer: { ...OFFER, text: "You get ₦2,500.00 when they send ₦25,000.00 or more." } });
@@ -477,8 +478,8 @@ describe("Refer & Earn card", () => {
     // Initially rule 1 (GBP) is active and link uses the currency-specific code JOHN2880GBP when multiple rules exist
     expect((view.getByLabelText("Your referral link") as HTMLInputElement).value).toBe("localhost:5000/ref/JOHN2880GBP");
 
-    // Referrer clicks the USD pill in the header
-    await act(async () => { fireEvent.click(view.getByRole("button", { name: "USD" })); });
+    // Referrer clicks the USD → ALL pill in the header
+    await act(async () => { fireEvent.click(view.getByRole("button", { name: "USD → ALL" })); });
     expect(view.getByTestId("refer-offer-text").textContent).toBe(usdOffer.text);
     expect((view.getByLabelText("Your referral link") as HTMLInputElement).value).toBe("localhost:5000/ref/JOHN2880USD");
 
