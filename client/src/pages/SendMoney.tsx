@@ -2286,21 +2286,21 @@ export default function SendMoney() {
             <div className="max-w-5xl mx-auto pb-10">
                 {/* Header */}
                 <div className="mb-4 flex items-center justify-between">
-                    <h1 className="text-xl font-bold">Send Money</h1>
-                    <div className="text-sm text-muted-foreground">Step {currentStep} of {steps.length}</div>
+                    <h1 className="text-xl font-semibold text-[#323130]">Send Money</h1>
+                    <div className="text-sm text-[#605e5c]">Step {currentStep} of {steps.length}</div>
                 </div>
 
                 {/* Stepper — hidden on Bank Transfer payment screen per design spec */}
                 {!(currentStep === 4 && showBankTransferPage) && (
-                    <div className="flex items-center justify-between mb-5 px-1 sm:px-4 md:px-12 relative overflow-hidden">
-                        <div className="absolute left-6 right-6 top-4 h-0.5 bg-gray-200 -z-10" />
+                    <div className="flex items-center justify-between mb-6 px-1 sm:px-4 md:px-12 relative overflow-hidden">
+                        <div className="absolute left-6 right-6 top-4 h-0.5 bg-[#efefee] -z-10" />
                         {steps.map((step) => (
                             <div key={step.id} className="flex flex-col items-center bg-background px-1 sm:px-2 z-10">
-                                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-semibold mb-1.5 transition-colors ${currentStep >= step.id ? "bg-primary text-white shadow-xs" : "bg-gray-100 text-gray-400"
+                                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-semibold mb-1.5 transition-colors ${currentStep >= step.id ? "bg-[#2e5bff] text-white shadow-xs" : "bg-[#efefee] text-[#605e5c]"
                                     }`}>
                                     {currentStep > step.id ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : step.id}
                                 </div>
-                                <span className={`text-[11px] sm:text-xs text-center leading-tight ${currentStep >= step.id ? "text-primary font-medium" : "text-gray-400"}`}>
+                                <span className={`text-[11px] sm:text-xs text-center leading-tight ${currentStep >= step.id ? "text-[#2e5bff] font-semibold" : "text-[#605e5c]"}`}>
                                     {step.title}
                                 </span>
                             </div>
@@ -2674,7 +2674,7 @@ export default function SendMoney() {
                                     </div>
 
                                     <div className="space-y-4">
-                                        <h3 className="font-semibold text-base">How will they receive the money?</h3>
+                                        <h3 className="font-semibold text-base text-[#323130]">How will they receive the money?</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                                             {[
                                                 { id: "bank_deposit", label: "Bank Deposit", icon: Landmark },
@@ -2691,13 +2691,13 @@ export default function SendMoney() {
                                                         }
                                                     }}
                                                     className={`
-                                                        flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-xl cursor-pointer transition-all font-medium text-sm active:scale-[0.98]
+                                                        flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-lg cursor-pointer transition-all font-medium text-sm active:scale-[0.98]
                                                         ${deliveryMethod === method.id
-                                                            ? "bg-blue-50 text-blue-600 border border-blue-200 shadow-2xs"
-                                                            : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"}
+                                                            ? "bg-[#ecf5ff] text-[#2e5bff] border border-[#2e5bff]"
+                                                            : "bg-white text-[#605e5c] hover:bg-gray-50 border border-[#efefee]"}
                                                     `}
                                                 >
-                                                    <method.icon className={`w-4 h-4 sm:w-5 sm:h-5 shrink-0 ${deliveryMethod === method.id ? "text-blue-600" : "text-gray-400"}`} />
+                                                    <method.icon className={`w-4 h-4 sm:w-5 sm:h-5 shrink-0 ${deliveryMethod === method.id ? "text-[#2e5bff]" : "text-[#605e5c]"}`} />
                                                     <span className="truncate">{method.label}</span>
                                                 </div>
                                             ))}
@@ -2764,13 +2764,13 @@ export default function SendMoney() {
                                         <Button
                                             variant="outline"
                                             onClick={handleBack}
-                                            className="flex-1 h-12 text-base rounded-xl"
+                                            className="flex-1 h-12 text-base rounded-full border-[#d2d0ce] text-[#323130]"
                                         >
                                             Back
                                         </Button>
                                         <Button
                                             onClick={handleNext}
-                                            className="flex-1 h-12 text-base bg-blue-600 hover:bg-blue-700 rounded-xl"
+                                            className="flex-1 h-12 text-base bg-[#2e5bff] hover:bg-blue-700 text-white font-semibold rounded-full shadow-none"
                                         >
                                             Continue
                                         </Button>
@@ -2780,9 +2780,9 @@ export default function SendMoney() {
                                 {/* Right Column: Sticky Summary */}
                                 <div className="lg:col-span-2 hidden lg:block">
                                     <div className="sticky top-6">
-                                        <Card className="border-2 border-gray-200 shadow-sm">
-                                            <CardHeader className="pb-4 bg-gray-50/50 border-b">
-                                                <CardTitle className="text-base">Amount Summary</CardTitle>
+                                        <Card className="rounded-xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)]">
+                                            <CardHeader className="pb-4 bg-white border-b border-[#efefee]">
+                                                <CardTitle className="text-base font-semibold text-[#323130]">Amount Summary</CardTitle>
                                             </CardHeader>
                                             <CardContent className="space-y-3 text-sm pt-4">
                                                 {promoApplied && promoDiscount > 0 && (
@@ -3116,7 +3116,7 @@ export default function SendMoney() {
                                             ))}
                                         </div>
 
-                                        <Button className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl">
+                                        <Button className="w-full h-12 bg-[#2e5bff] hover:bg-blue-700 text-white font-semibold rounded-full shadow-none">
                                             Show More
                                         </Button>
                                     </div>
@@ -3125,10 +3125,10 @@ export default function SendMoney() {
                                 {/* Right Column: Sticky Summary */}
                                 <div className="lg:col-span-2 hidden lg:block">
                                     <div className="sticky top-6">
-                                        <Card className="border-2 border-gray-200 shadow-sm">
-                                            <CardHeader className="pb-4 bg-gray-50/50 border-b">
+                                        <Card className="rounded-xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)]">
+                                            <CardHeader className="pb-4 bg-white border-b border-[#efefee]">
                                                 <div className="flex justify-between items-center">
-                                                    <CardTitle className="text-base">Amount Summary</CardTitle>
+                                                    <CardTitle className="text-base font-semibold text-[#323130]">Amount Summary</CardTitle>
                                                     {/* Session Timer */}
                                                     <div className={`flex gap-1 font-mono text-sm px-2 py-1 rounded ${sessionTimeLeft <= 60 ? 'text-red-600 bg-red-50 animate-pulse' : 'text-blue-600 bg-blue-50'}`}>
                                                         <span>{timerDisplay.minutes}</span>:<span>{timerDisplay.seconds}</span>
@@ -3918,7 +3918,7 @@ export default function SendMoney() {
                                         <Button
                                             variant="outline"
                                             onClick={handleBack}
-                                            className="flex-1 h-12 text-base rounded-xl"
+                                            className="flex-1 h-12 text-base rounded-full border-[#d2d0ce] text-[#323130]"
                                             disabled={submittingTransaction}
                                         >
                                             Back
@@ -3926,7 +3926,7 @@ export default function SendMoney() {
                                         <Button
                                             onClick={handleSubmitTransaction}
                                             disabled={submittingTransaction}
-                                            className="flex-1 h-12 text-base bg-blue-600 hover:bg-blue-700 rounded-xl"
+                                            className="flex-1 h-12 text-base bg-[#2e5bff] hover:bg-blue-700 text-white font-semibold rounded-full shadow-none"
                                         >
                                             {submittingTransaction ? (
                                                 <div className="flex items-center gap-2">
@@ -3941,10 +3941,10 @@ export default function SendMoney() {
                                 {/* Right Column: Sticky Summary */}
                                 <div className="lg:col-span-2">
                                     <div className="sticky top-6">
-                                        <Card className="border-2 border-gray-200 shadow-sm">
-                                            <CardHeader className="pb-4 bg-gray-50/50 border-b">
+                                        <Card className="rounded-xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)]">
+                                            <CardHeader className="pb-4 bg-white border-b border-[#efefee]">
                                                 <div className="flex justify-between items-center">
-                                                    <CardTitle className="text-base">Amount Summary</CardTitle>
+                                                    <CardTitle className="text-base font-semibold text-[#323130]">Amount Summary</CardTitle>
                                                     {/* Session Timer */}
                                                     <div className={`flex gap-1 font-mono text-sm px-2 py-1 rounded ${sessionTimeLeft <= 60 ? 'text-red-600 bg-red-50 animate-pulse' : 'text-blue-600 bg-blue-50'}`}>
                                                         <span>{timerDisplay.minutes}</span>:<span>{timerDisplay.seconds}</span>
@@ -5062,9 +5062,9 @@ export default function SendMoney() {
                                 {!paymentOutcome && (
                                 <div className="lg:col-span-2">
                                     <div className="sticky top-6 space-y-6">
-                                        <Card className="border-2 border-gray-200 shadow-sm">
-                                            <CardHeader className="pb-4 bg-gray-50/50 border-b">
-                                                <CardTitle className="text-base">Amount Summary</CardTitle>
+                                        <Card className="rounded-xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)]">
+                                            <CardHeader className="pb-4 bg-white border-b border-[#efefee]">
+                                                <CardTitle className="text-base font-semibold text-[#323130]">Amount Summary</CardTitle>
                                             </CardHeader>
                                             <CardContent className="space-y-3 text-sm pt-4">
                                                 {/* Promo Discount Row (shown when a code is applied) */}

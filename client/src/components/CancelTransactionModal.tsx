@@ -103,7 +103,7 @@ export function CancelTransactionModal({
           <div className="flex gap-3">
             <Button
               variant="outline"
-              className="flex-1 h-11 font-medium"
+              className="flex-1 h-11 font-medium rounded-full border-[#d2d0ce] text-[#323130]"
               onClick={handleKeep}
               disabled={isLoading}
               autoFocus
@@ -113,7 +113,7 @@ export function CancelTransactionModal({
             </Button>
             <Button
               variant="destructive"
-              className="flex-1 h-11 font-medium"
+              className="flex-1 h-11 font-medium rounded-full"
               onClick={handleConfirm}
               disabled={isLoading}
               data-testid="button-confirm-cancel"

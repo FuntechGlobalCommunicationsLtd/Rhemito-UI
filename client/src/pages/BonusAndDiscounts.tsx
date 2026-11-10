@@ -87,11 +87,15 @@ function buildHistory(data: RewardsSummary, currency: string, promoRows: PromoRo
 
 function StatTile({ label, value, sub, accent, children }: { label: string; value: string; sub: string; accent?: boolean; children?: React.ReactNode }) {
   return (
-    <Card className="rounded-[14px] border border-slate-200 bg-white p-4 flex flex-col gap-1">
-      <span className="text-[13px] text-slate-500">{label}</span>
-      <span className={cn("font-display text-[22px] font-extrabold", accent ? "text-teal-700" : "text-slate-900")}>{value}</span>
-      <span className="text-xs text-slate-500">{sub}</span>
-      {children}
+    <Card className="rounded-lg border border-[#efefee] bg-white p-3.5 shadow-none flex flex-col justify-between gap-2">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs text-[#323130]">{label}</span>
+        <span className={cn("font-display text-base sm:text-xl font-semibold tracking-tight", accent ? "text-[#323130]" : "text-[#323130]")}>{value}</span>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-[11px] sm:text-xs text-[#605e5c]">{sub}</span>
+        {children}
+      </div>
     </Card>
   );
 }
@@ -215,7 +219,7 @@ export default function BonusAndDiscounts() {
           </div>
           {currencies.length > 1 && (
             <Select value={currency} onValueChange={setPickedCurrency}>
-              <SelectTrigger className="h-11 w-[140px] rounded-full" aria-label="Currency">
+              <SelectTrigger className="h-9 w-[120px] rounded-full border-[#d2d0ce]" aria-label="Currency">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -226,20 +230,20 @@ export default function BonusAndDiscounts() {
         </div>
 
         <Tabs value={tab} onValueChange={changeTab}>
-          <TabsList className="grid h-12 w-full grid-cols-3 rounded-xl bg-slate-200 p-1 sm:max-w-md">
-            <TabsTrigger value="overview" className="h-10 rounded-[9px] text-sm font-semibold">Overview</TabsTrigger>
-            <TabsTrigger value="history" className="h-10 rounded-[9px] text-sm font-semibold">History</TabsTrigger>
-            <TabsTrigger value="referrals" className="h-10 rounded-[9px] text-sm font-semibold">My referrals</TabsTrigger>
+          <TabsList className="grid h-10 w-full grid-cols-3 rounded-lg bg-[#efefee] p-1 sm:max-w-[390px]">
+            <TabsTrigger value="overview" className="h-8 rounded-[4px] text-xs sm:text-sm font-normal text-[#605e5c] data-[state=active]:bg-white data-[state=active]:font-semibold data-[state=active]:text-[#323130] data-[state=active]:shadow-none">Overview</TabsTrigger>
+            <TabsTrigger value="history" className="h-8 rounded-[4px] text-xs sm:text-sm font-normal text-[#605e5c] data-[state=active]:bg-white data-[state=active]:font-semibold data-[state=active]:text-[#323130] data-[state=active]:shadow-none">History</TabsTrigger>
+            <TabsTrigger value="referrals" className="h-8 rounded-[4px] text-xs sm:text-sm font-normal text-[#605e5c] data-[state=active]:bg-white data-[state=active]:font-semibold data-[state=active]:text-[#323130] data-[state=active]:shadow-none">My referrals</TabsTrigger>
           </TabsList>
 
           {rewards.isLoading ? (
             <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="rewards-loading">
-              {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-[14px]" />)}
+              {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-lg" />)}
             </div>
           ) : rewards.isError ? (
-            <Card className="mt-6 rounded-2xl border border-slate-200 p-6 text-center" data-testid="rewards-error">
-              <p className="text-[15px] text-slate-700">We couldn&apos;t load your rewards. Please try again.</p>
-              <Button className="mt-4 h-11 rounded-xl bg-blue-600 hover:bg-blue-700" onClick={() => rewards.refetch()} disabled={rewards.isFetching}>
+            <Card className="mt-6 rounded-xl border border-[#efefee] p-6 text-center shadow-none" data-testid="rewards-error">
+              <p className="text-[15px] text-[#323130]">We couldn&apos;t load your rewards. Please try again.</p>
+              <Button className="mt-4 h-10 rounded-full bg-[#2e5bff] hover:bg-blue-700" onClick={() => rewards.refetch()} disabled={rewards.isFetching}>
                 {rewards.isFetching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Retry
               </Button>
@@ -251,9 +255,9 @@ export default function BonusAndDiscounts() {
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="bonus-totals">
                   <StatTile label="Available" value={formatMoney(balance.available, currency)} sub="Ready for your next transfer" accent>
                     {balance.available > 0 ? (
-                      <Button className="mt-2 h-11 rounded-xl bg-blue-600 text-sm font-semibold hover:bg-blue-700" onClick={() => setLocation("/send-money")}>Send money</Button>
+                      <Button className="mt-1 h-8 rounded-full bg-[#2e5bff] text-xs font-semibold text-white hover:bg-blue-700 shadow-none" onClick={() => setLocation("/send-money")}>Send money</Button>
                     ) : (
-                      <Button variant="outline" className="mt-2 h-11 rounded-xl text-sm font-semibold" onClick={copyLink}>Refer a friend</Button>
+                      <Button variant="secondary" className="mt-1 h-8 rounded-full bg-[#efefee] text-xs font-normal text-[#605e5c] hover:bg-slate-200 border-0 shadow-none" onClick={copyLink}>Refer a friend</Button>
                     )}
                   </StatTile>
                   <StatTile
@@ -265,23 +269,23 @@ export default function BonusAndDiscounts() {
                   <StatTile label="Bonus expired" value={formatMoney(balance.expired, currency)} sub="Use your bonus before it expires" />
                 </div>
 
-                <p className="text-sm text-slate-700" data-testid="total-saved">
-                  You&apos;ve saved <strong>{formatMoney(balance.used + promoSaved, currency)}</strong> in total with bonuses and promo codes.
+                <p className="rounded-lg border border-[#87c2fc] bg-[#ecf5ff] p-4 text-sm sm:text-base text-[#323130]" data-testid="total-saved">
+                  You&apos;ve saved <strong className="font-semibold text-[#323130]">{formatMoney(balance.used + promoSaved, currency)}</strong> in total with bonuses and promo codes.
                 </p>
 
                 <BonusBreakdown balance={balance} currency={currency} activeSource={source} onView={viewSource} />
 
                 {source !== "ALL" && (
-                  <p className="flex items-center justify-between gap-3 rounded-xl bg-slate-100 px-3.5 py-2 text-sm text-slate-700" data-testid="source-filter-note">
+                  <p className="flex items-center justify-between gap-3 rounded-lg bg-[#efefee] px-3.5 py-2 text-sm text-[#323130]" data-testid="source-filter-note">
                     <span>{BONUS_COPY.sourceFilterShowing(sourceGroupLabel(source))}</span>
-                    <button type="button" onClick={() => setSource("ALL")} className="font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">{BONUS_COPY.clearFilter}</button>
+                    <button type="button" onClick={() => setSource("ALL")} className="font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">{BONUS_COPY.clearFilter}</button>
                   </p>
                 )}
 
-                <Card className="rounded-2xl border border-slate-200 bg-white px-4">
-                  <h2 className="mb-1 mt-3 text-[15px] font-bold text-slate-900">Unused bonus</h2>
+                <Card className="rounded-xl border border-[#efefee] bg-white px-4 shadow-none">
+                  <h2 className="mb-1 mt-3 text-[15px] font-semibold text-[#323130]">Unused bonus</h2>
                   {unused.length === 0 ? (
-                    <p className="pb-4 pt-1 text-sm text-slate-600">
+                    <p className="pb-4 pt-1 text-sm text-[#605e5c]">
                       {source === "ALL" ? "No unused bonus. Invite friends to earn bonus credit." : `No unused bonus from ${sourceGroupLabel(source).toLowerCase()}.`}
                     </p>
                   ) : (
@@ -289,19 +293,19 @@ export default function BonusAndDiscounts() {
                       {unused.map((c, i) => {
                         const left = daysUntil(c.expires_on);
                         return (
-                          <li key={c.id} className={cn("flex items-center gap-3 py-3", i < unused.length - 1 && "border-b border-slate-100")}>
+                          <li key={c.id} className={cn("flex items-center gap-3 py-3", i < unused.length - 1 && "border-b border-[#efefee]")}>
                             <div className="flex flex-1 flex-col gap-1">
                               <span className="flex flex-wrap items-center gap-2">
-                                <span className="text-[15px] font-semibold text-slate-900">{describeCredit({ credit_source_label: c.credit_source_label, source: c.source, reason_code: c.reason_code })}</span>
+                                <span className="text-[15px] font-semibold text-[#323130]">{describeCredit({ credit_source_label: c.credit_source_label, source: c.source, reason_code: c.reason_code })}</span>
                                 <SourceChip source={c.credit_source} />
                               </span>
-                              {c.status === "PARTLY_USED" && <span className="text-[13px] text-slate-500">{formatMoney(c.remaining, c.currency)} left of {formatMoney(c.amount, c.currency)}</span>}
-                              <span className="text-[13px] text-slate-500">Earned {formatUkDate(c.earned_on)}{c.expires_on ? ` · expires ${formatUkDate(c.expires_on)}` : ""}</span>
+                              {c.status === "PARTLY_USED" && <span className="text-[13px] text-[#605e5c]">{formatMoney(c.remaining, c.currency)} left of {formatMoney(c.amount, c.currency)}</span>}
+                              <span className="text-[13px] text-[#605e5c]">Earned {formatUkDate(c.earned_on)}{c.expires_on ? ` · expires ${formatUkDate(c.expires_on)}` : ""}</span>
                               {left !== null && left <= 14 && (
                                 <span className="self-start rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">{expiryLabel(c.expires_on)}</span>
                               )}
                             </div>
-                            <span className="text-[15px] font-bold text-slate-900">{formatMoney(c.remaining, c.currency)}</span>
+                            <span className="text-[15px] font-bold text-[#323130]">{formatMoney(c.remaining, c.currency)}</span>
                           </li>
                         );
                       })}
@@ -321,8 +325,8 @@ export default function BonusAndDiscounts() {
                       aria-pressed={filter === key}
                       onClick={() => setFilter(key)}
                       className={cn(
-                        "h-9 rounded-full px-3.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-                        filter === key ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                        "h-8 rounded-full px-3.5 text-xs sm:text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-colors",
+                        filter === key ? "bg-[#2e5bff] text-white font-semibold" : "border border-[#d2d0ce] bg-white text-[#605e5c] hover:bg-slate-50",
                       )}
                     >
                       {label}
@@ -331,13 +335,13 @@ export default function BonusAndDiscounts() {
                 </div>
                 {showSourceFilter && (
                   <div className="flex flex-wrap items-center gap-2" data-testid="source-filter">
-                    <label htmlFor="bonus-source" className="text-sm font-medium text-slate-600">{BONUS_COPY.sourceFilter}</label>
+                    <label htmlFor="bonus-source" className="text-sm font-medium text-[#605e5c]">{BONUS_COPY.sourceFilter}</label>
                     {source !== "ALL" && (
                       <div className="order-last flex items-center gap-3 ml-1">
                         <button
                           type="button"
                           onClick={() => setSource("ALL")}
-                          className="text-xs font-semibold text-blue-700 hover:underline cursor-pointer"
+                          className="text-xs font-semibold text-[#2e5bff] hover:underline cursor-pointer"
                           data-testid="button-clear-source-filter"
                         >
                           {BONUS_COPY.clearFilter}
@@ -349,7 +353,7 @@ export default function BonusAndDiscounts() {
                             setFilter("all");
                             changeTab("overview");
                           }}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#605e5c] hover:text-[#323130] cursor-pointer"
                           data-testid="button-history-back-overview"
                         >
                           <ArrowLeft className="w-3.5 h-3.5" />
@@ -358,7 +362,7 @@ export default function BonusAndDiscounts() {
                       </div>
                     )}
                     <Select value={source} onValueChange={(v) => setSource(v as CreditSource | "ALL")}>
-                      <SelectTrigger id="bonus-source" className="h-9 w-[170px] rounded-full" aria-label={BONUS_COPY.sourceFilter}>
+                      <SelectTrigger id="bonus-source" className="h-8 w-[170px] rounded-full border-[#d2d0ce]" aria-label={BONUS_COPY.sourceFilter}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -370,29 +374,29 @@ export default function BonusAndDiscounts() {
                     </Select>
                   </div>
                 )}
-                <Card className="rounded-2xl border border-slate-200 bg-white px-4">
+                <Card className="rounded-xl border border-[#efefee] bg-white px-4 shadow-none">
                   {filter === "promo" && promoSavings.isError ? (
-                    <p className="py-6 text-center text-sm text-slate-600" role="alert">
+                    <p className="py-6 text-center text-sm text-[#605e5c]" role="alert">
                       {PROMO_COPY.savingsError}{" "}
-                      <button type="button" className="font-semibold text-blue-700 underline" onClick={() => void promoSavings.refetch()}>{PROMO_COPY.tryAgain}</button>
+                      <button type="button" className="font-semibold text-[#2e5bff] underline" onClick={() => void promoSavings.refetch()}>{PROMO_COPY.tryAgain}</button>
                     </p>
                   ) : filtered.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-slate-600">
+                    <p className="py-6 text-center text-sm text-[#605e5c]">
                       {history.length === 0 ? "No rewards yet. Invite friends or use a promo code to start saving." : filter === "used" ? "You haven't used any bonus credit yet. You can use it when you pay for a transfer." : "Nothing to show for this filter."}
                     </p>
                   ) : (
                     <ul data-testid="bonus-history">
                       {filtered.map((h, i) => (
-                        <li key={h.id} className={cn("flex items-center gap-3 py-3.5", i < filtered.length - 1 && "border-b border-slate-100")}>
+                        <li key={h.id} className={cn("flex items-center gap-3 py-3.5", i < filtered.length - 1 && "border-b border-[#efefee]")}>
                           <div className="flex flex-1 flex-col gap-1">
                             <span className="flex flex-wrap items-center gap-2">
-                              <span className="text-[15px] font-semibold text-slate-900">{h.description}</span>
+                              <span className="text-[15px] font-semibold text-[#323130]">{h.description}</span>
                               <SourceChip source={h.credit_source} />
                             </span>
-                            <span className="text-[13px] text-slate-500">{formatUkDate(h.date)}</span>
+                            <span className="text-[13px] text-[#605e5c]">{formatUkDate(h.date)}</span>
                           </div>
                           <div className="flex flex-col items-end gap-1">
-                            <span className={cn("text-[15px] font-bold", h.amount >= 0 ? "text-teal-700" : "text-slate-900")}>
+                            <span className={cn("text-[15px] font-bold", h.amount >= 0 ? "text-teal-700" : "text-[#323130]")}>
                               {h.amount >= 0 ? "+" : ""}{formatMoney(h.amount, h.currency)}
                             </span>
                             {h.returned ? (
@@ -410,29 +414,29 @@ export default function BonusAndDiscounts() {
 
               <TabsContent value="referrals" className="mt-6 space-y-3.5">
                 {referrals.length === 0 ? (
-                  <Card className="rounded-2xl border border-slate-200 p-6 text-center">
-                    <p className="text-[15px] text-slate-700">No referrals yet. Share your link to start earning.</p>
-                    <Button className="mt-4 h-11 rounded-xl bg-blue-600 hover:bg-blue-700" onClick={copyLink}>
+                  <Card className="rounded-xl border border-[#efefee] p-6 text-center shadow-none">
+                    <p className="text-[15px] text-[#323130]">No referrals yet. Share your link to start earning.</p>
+                    <Button className="mt-4 h-10 rounded-full bg-[#2e5bff] hover:bg-blue-700 shadow-none" onClick={copyLink}>
                       <Copy className="mr-2 h-4 w-4" /> Copy referral link
                     </Button>
                   </Card>
                 ) : (
                   <>
-                    <p className="text-sm text-slate-700" data-testid="referral-summary">
+                    <p className="text-sm text-[#323130]" data-testid="referral-summary">
                       Joined: {referralSummary?.joined ?? referrals.length} · Earned: {referralSummary?.earned_count ?? 0} · Total earned:{" "}
                       {Object.entries(referralSummary?.total_earned ?? {}).map(([c, v]) => formatMoney(v, c)).join(", ") || formatMoney(0, currency)}
                     </p>
-                    <button type="button" className="self-start text-[15px] font-semibold text-blue-600 hover:underline" data-testid="referral-view-credits" onClick={() => viewSource("REFERRAL")}>
+                    <button type="button" className="self-start text-[15px] font-semibold text-[#2e5bff] hover:underline" data-testid="referral-view-credits" onClick={() => viewSource("REFERRAL")}>
                       View referral bonus in your history
                     </button>
                     {referrals.map((r) => (
-                      <Card key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3" data-testid={`referral-card-${r.id}`}>
+                      <Card key={r.id} className="rounded-xl border border-[#efefee] bg-white p-4 flex flex-col gap-3 shadow-none" data-testid={`referral-card-${r.id}`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-base font-bold text-slate-900">{r.friend}</span>
+                          <span className="text-base font-bold text-[#323130]">{r.friend}</span>
                           <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold", REFERRAL_PILL[r.status].cls)}>{REFERRAL_PILL[r.status].label}</span>
                         </div>
                         {r.status === "PENDING" ? <ReferralTimeline r={r} /> : (
-                          <span className="flex items-center gap-2 text-sm text-slate-600">
+                          <span className="flex items-center gap-2 text-sm text-[#605e5c]">
                             {r.status === "REWARDED" ? <Check className="h-4 w-4 text-teal-700" /> : <Circle className="h-3 w-3 text-slate-400" />}
                             {referralHelpText(r)}
                           </span>
