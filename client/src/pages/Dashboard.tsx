@@ -1129,23 +1129,23 @@ export default function Dashboard() {
           onView={viewReferOffer}
         />
 
-        {/* Account Summary Section — 3 Pastel Cards matching reference screenshot */}
+        {/* Account Summary Section — 3 Clean White Cards matching Figma 12498:26082 */}
         <motion.div variants={itemVariants} data-testid="section-account-summary">
-          <h2 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight mb-3">
+          <h2 className="text-base font-semibold text-[#323130] tracking-tight mb-3">
             Account Summary
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Total Sent Card */}
-            <div className="rounded-2xl bg-[#E8F0FE] px-5 py-5 flex flex-col justify-between min-h-[104px]">
-              <span className="text-xs font-medium text-slate-500">
-                Total Sent
+            <div className="rounded-lg bg-white p-4 flex flex-col justify-between min-h-[82px]">
+              <span className="text-xs font-normal text-[#323130]">
+                Total sent
               </span>
               <div className="flex items-center justify-between gap-2 mt-2">
-                <span data-testid="summary-total-sent" className="text-lg md:text-xl font-bold text-slate-700 tracking-tight whitespace-nowrap tabular-nums">
+                <span data-testid="summary-total-sent" className="text-xl font-semibold text-[#323130] tracking-tight whitespace-nowrap tabular-nums">
                   {totalSentFormatted}
                 </span>
                 <Select defaultValue="GBP">
-                  <SelectTrigger className="h-8 w-[84px] rounded-full text-xs bg-white border-0 shadow-2xs font-medium text-slate-600 px-3">
+                  <SelectTrigger className="h-7 w-[76px] rounded-full text-xs bg-white border border-[#d2d0ce] shadow-none font-semibold text-[#323130] px-2.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1156,16 +1156,16 @@ export default function Dashboard() {
             </div>
 
             {/* Wallet Balance Card */}
-            <div className="rounded-2xl bg-[#DFEEFB] px-5 py-5 flex flex-col justify-between min-h-[104px]">
-              <span className="text-xs font-medium text-slate-500">
+            <div className="rounded-lg bg-white p-4 flex flex-col justify-between min-h-[82px]">
+              <span className="text-xs font-normal text-[#323130]">
                 Wallet Balance
               </span>
               <div className="flex items-center justify-between gap-2 mt-2">
-                <span data-testid="summary-wallet-balance" className="text-lg md:text-xl font-bold text-slate-700 tracking-tight whitespace-nowrap tabular-nums">
+                <span data-testid="summary-wallet-balance" className="text-xl font-semibold text-[#323130] tracking-tight whitespace-nowrap tabular-nums">
                   {walletBalanceFormatted}
                 </span>
                 <Select defaultValue="GBP">
-                  <SelectTrigger className="h-8 w-[84px] rounded-full text-xs bg-white border-0 shadow-2xs font-medium text-slate-600 px-3">
+                  <SelectTrigger className="h-7 w-[76px] rounded-full text-xs bg-white border border-[#d2d0ce] shadow-none font-semibold text-[#323130] px-2.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1175,17 +1175,17 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Collection / Payment Account Card */}
-            <div className="rounded-2xl bg-[#DFEFE0] px-5 py-5 flex flex-col justify-between min-h-[104px]">
-              <span className="text-xs font-medium text-slate-500">
+            {/* Collection Account Card */}
+            <div className="rounded-lg bg-white p-4 flex flex-col justify-between min-h-[82px]">
+              <span className="text-xs font-normal text-[#323130]">
                 Collection Account
               </span>
               <div className="flex items-center justify-between gap-2 mt-2">
-                <span data-testid="summary-collection-account" className="text-lg md:text-xl font-bold text-slate-700 tracking-tight whitespace-nowrap tabular-nums">
+                <span data-testid="summary-collection-account" className="text-xl font-semibold text-[#323130] tracking-tight whitespace-nowrap tabular-nums">
                   {collectionBalanceFormatted}
                 </span>
                 <Select defaultValue="GBP">
-                  <SelectTrigger className="h-8 w-[84px] rounded-full text-xs bg-white border-0 shadow-2xs font-medium text-slate-600 px-3">
+                  <SelectTrigger className="h-7 w-[76px] rounded-full text-xs bg-white border border-[#d2d0ce] shadow-none font-semibold text-[#323130] px-2.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1197,19 +1197,20 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Quick Services + Recipients Row matching Figma Option 2 */}
-        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          <Card className="lg:col-span-7 rounded-2xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)] flex flex-col justify-center">
-            <CardContent className="px-5 py-4">
-              <h3 className="text-base font-bold text-[#323130] mb-3">
-                Quick Services
+        {/* Quick Service Full-Width Row matching Figma 12498:26082 */}
+        <motion.div variants={itemVariants}>
+          <Card className="rounded-lg border border-[#efefee] bg-white shadow-none">
+            <CardContent className="p-4">
+              <h3 className="text-base font-semibold text-[#323130] mb-3.5">
+                Quick service
+                <span className="sr-only">Quick Services</span>
               </h3>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3.5">
                 <button
                   type="button"
                   onClick={() => setLocation("/send-money")}
                   data-testid="button-send-money"
-                  className="h-9 px-6 rounded-full bg-[#2e5bff] hover:bg-blue-700 text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer"
+                  className="h-10 min-w-[150px] px-6 rounded-full bg-[#2e5bff] hover:bg-blue-700 text-white text-sm sm:text-base font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Send Money
                 </button>
@@ -1217,7 +1218,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/request-payment")}
                   data-testid="button-request-payment"
-                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-10 min-w-[150px] px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-sm sm:text-base font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Receive Money
                 </button>
@@ -1225,15 +1226,15 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/bonus-discounts")}
                   data-testid="button-bonus-discounts"
-                  className="h-9 px-6 rounded-full border border-blue-400 bg-blue-50/80 hover:bg-blue-100/80 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-10 min-w-[150px] px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-sm sm:text-base font-semibold transition-all active:scale-95 cursor-pointer"
                 >
-                  Reward$
+                  Reward
                 </button>
                 <button
                   type="button"
                   onClick={() => setLocation("/send-invoice")}
                   data-testid="button-send-invoice"
-                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-10 min-w-[150px] px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-sm sm:text-base font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Send Invoice
                 </button>
@@ -1241,60 +1242,16 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/group-pay/create")}
                   data-testid="button-funding-campaigns"
-                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-10 min-w-[150px] px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-sm sm:text-base font-semibold transition-all active:scale-95 cursor-pointer"
                 >
-                  Funding Campaigns
+                  Fund Campaigns
                 </button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card
-            data-testid="section-recent-recipients"
-            className="lg:col-span-5 rounded-2xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)] flex flex-col justify-center"
-          >
-            <CardContent className="px-5 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base font-bold text-[#323130]">
-                  Recipients
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setLocation("/senders-recipients")}
-                  className="text-xs font-semibold text-[#605e5c] hover:text-[#2e5bff] transition-colors cursor-pointer"
-                  data-testid="button-view-all-recipients"
-                >
-                  View all
-                </button>
-              </div>
-              <div className="flex items-center justify-between gap-2 px-1">
-                {recentRecipients.map((recipient) => (
-                  <button
-                    key={recipient.id}
-                    type="button"
-                    onClick={() => setLocation("/send-money")}
-                    data-testid={`recipient-quick-${recipient.id}`}
-                    className="flex flex-col items-center gap-2 group cursor-pointer"
-                  >
-                    <div
-                      className={cn(
-                        "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-transform group-hover:scale-105",
-                        recipient.color
-                      )}
-                    >
-                      {recipient.initials}
-                    </div>
-                    <span className="text-xs font-semibold text-[#323130] group-hover:text-[#2e5bff] transition-colors">
-                      {recipient.name}
-                    </span>
-                  </button>
-                ))}
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Your bonus credits + Refer & Earn side-by-side cards underneath Quick Services */}
+        {/* Refer & Earn full-width split banner underneath Quick Service (Your bonus credits hidden per user request) */}
         {(rewards.data?.wallet.bonus_blocked ||
           rewards.data?.offer ||
           rewards.isLoading ||
@@ -1302,18 +1259,11 @@ export default function Dashboard() {
           displayBonusBalances.length > 0) && (
           <motion.div variants={itemVariants} className="flex flex-col gap-4">
             {rewards.data?.wallet.bonus_blocked && <BonusBlockedNotice />}
-            <div
-              className={cn(
-                "grid grid-cols-1 gap-4 items-stretch",
-                displayBonusBalances.length > 0 &&
-                  Boolean(rewards.data?.offer || rewards.isLoading || rewards.isError) &&
-                  "lg:grid-cols-2",
-              )}
-            >
+            <div className="grid grid-cols-1 gap-4 items-stretch">
               {displayBonusBalances.length > 0 && (
                 <Card
                   data-testid="rewards-section-bonus-banners"
-                  className="h-full rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs flex flex-col justify-between gap-4"
+                  className="hidden h-full rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs flex-col justify-between gap-4"
                 >
                   <div className="flex flex-col gap-4">
                     <div className="flex items-start justify-between gap-3">
