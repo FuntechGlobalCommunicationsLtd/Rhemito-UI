@@ -100,28 +100,28 @@ export function Sidebar({
     const content = (
       <div
         className={cn(
-          "flex items-center gap-3.5 rounded-lg px-4 py-2.5 text-[13px] transition-all duration-150",
+          "flex items-center gap-3.5 rounded-lg px-4 py-2.5 text-[14px] transition-all duration-150",
           !item.enabled && "cursor-not-allowed opacity-50",
           item.enabled && "cursor-pointer",
           isCollapsed && "justify-center px-2",
           isActive
-            ? "bg-blue-50/90 font-semibold text-blue-700"
-            : "font-normal text-blue-600 hover:bg-blue-50/50 hover:text-blue-700",
+            ? "bg-[#e8f0fe]/90 font-semibold text-[#2e5bff]"
+            : "font-medium text-[#605e5c] hover:bg-blue-50/60 hover:text-[#2e5bff]",
           className
         )}
         data-testid={`link-${item.label.toLowerCase().replace(/\$/g, "").replace(/\s+/g, "-")}`}
       >
         <item.icon
           className={cn(
-            "h-[18px] w-[18px] shrink-0",
-            isActive ? "text-blue-700" : "text-blue-600"
+            "h-[18px] w-[18px] shrink-0 transition-colors",
+            isActive ? "text-[#2e5bff]" : "text-[#8a8886] group-hover:text-[#2e5bff]"
           )}
         />
         {!isCollapsed && (
           <div className="min-w-0 flex-1">
             <span className="block truncate">{item.label}</span>
             {isReward && rewardsWaiting && (
-              <span className="text-[10px] font-medium text-blue-600/80">
+              <span className="text-[10px] font-medium text-[#2e5bff]/80">
                 Rewards waiting!
               </span>
             )}
@@ -169,13 +169,13 @@ export function Sidebar({
         <button
           type="button"
           className={cn(
-            "flex w-full cursor-pointer items-center gap-3.5 rounded-lg px-4 py-2.5 text-[13px] font-normal text-blue-600 transition-all duration-150 hover:bg-red-50/60 hover:text-red-600",
+            "flex w-full cursor-pointer items-center gap-3.5 rounded-lg px-4 py-2.5 text-[14px] font-medium text-[#605e5c] transition-all duration-150 hover:bg-red-50/60 hover:text-red-600",
             isCollapsed && "justify-center px-2"
           )}
           data-testid="button-logout"
           onClick={handleLogout}
         >
-          <LogOut className="h-[18px] w-[18px] shrink-0" />
+          <LogOut className="h-[18px] w-[18px] shrink-0 text-[#8a8886]" />
           {!isCollapsed && <span>Logout</span>}
         </button>
       </nav>
@@ -186,7 +186,7 @@ export function Sidebar({
     <>
       <aside
         className={cn(
-          "fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r border-slate-200/80 bg-white transition-all duration-300 lg:flex",
+          "fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r border-[#f1f5f7] bg-[#f9fcff] transition-all duration-300 lg:flex",
           collapsed ? "w-20" : "w-60"
         )}
       >
@@ -195,7 +195,7 @@ export function Sidebar({
             type="button"
             onClick={onToggleCollapse}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="absolute -right-3.5 top-7 z-40 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-colors hover:bg-blue-700"
+            className="absolute -right-3.5 top-7 z-40 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-[#2e5bff] text-white shadow-md transition-colors hover:bg-blue-700"
           >
             {collapsed ? (
               <ChevronRight className="h-4 w-4" />
@@ -222,16 +222,16 @@ export function Sidebar({
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 z-50 flex h-screen w-72 flex-col bg-white shadow-2xl lg:hidden"
+              className="fixed left-0 top-0 z-50 flex h-screen w-72 flex-col bg-[#f9fcff] shadow-2xl lg:hidden"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 p-4">
+              <div className="flex items-center justify-between border-b border-[#f1f5f7] bg-white p-4">
                 <div className="flex items-center gap-2.5">
                   <img
-                    src="/logo.png"
+                    src="/Rhemito-logo.svg"
                     alt="Rhemito Logo"
-                    className="h-8 w-8 object-contain"
+                    className="h-[33px] w-[26px] object-contain"
                   />
-                  <span className="font-display text-lg font-bold text-slate-900">
+                  <span className="font-display text-lg font-bold text-[#323130]">
                     Rhemito
                   </span>
                 </div>

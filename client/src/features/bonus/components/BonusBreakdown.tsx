@@ -19,27 +19,27 @@ export function BonusBreakdown({ balance, currency, activeSource, onView }: Bonu
   const debt = balance.outstanding_debt ?? 0;
   return (
     <div className="space-y-3" data-testid="bonus-breakdown">
-      <Card className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-        <h2 className="mb-1 text-[15px] font-bold text-slate-900">{BONUS_COPY.howEarned}</h2>
+      <Card className="rounded-xl border border-[#efefee] bg-white px-4 py-3 shadow-none">
+        <h2 className="mb-1 text-[15px] font-semibold text-[#323130]">{BONUS_COPY.howEarned}</h2>
         {rows.length === 1 ? (
-          <p className="pb-1 text-sm text-slate-600" data-testid="breakdown-single">{BONUS_COPY.allFrom(rows[0].label)}</p>
+          <p className="pb-1 text-sm text-[#605e5c]" data-testid="breakdown-single">{BONUS_COPY.allFrom(rows[0].label)}</p>
         ) : (
           <ul>
             {rows.map((r, i) => (
-              <li key={r.source} className={cn("flex flex-col gap-1.5 py-3", i < rows.length - 1 && "border-b border-slate-100")} data-testid={`breakdown-${r.source}`}>
+              <li key={r.source} className={cn("flex flex-col gap-1.5 py-3", i < rows.length - 1 && "border-b border-[#efefee]")} data-testid={`breakdown-${r.source}`}>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[15px] font-semibold text-slate-900">{r.label}</span>
+                  <span className="text-[15px] font-semibold text-[#323130]">{r.label}</span>
                   <button
                     type="button"
                     onClick={() => onView(r.source)}
                     aria-pressed={activeSource === r.source}
                     aria-label={`${BONUS_COPY.view} ${r.label}`}
-                    className="min-h-[32px] rounded px-1 text-sm font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="min-h-[32px] rounded px-1 text-sm font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {BONUS_COPY.view}
                   </button>
                 </div>
-                <span className="text-[13px] text-slate-500">{BONUS_COPY.earnedLeft(formatMoney(r.earned, currency), formatMoney(r.available, currency))}</span>
+                <span className="text-[13px] text-[#605e5c]">{BONUS_COPY.earnedLeft(formatMoney(r.earned, currency), formatMoney(r.available, currency))}</span>
                 <svg className="h-1.5 w-full overflow-hidden rounded-full" role="presentation" aria-hidden>
                   <rect width="100%" height="100%" className="fill-slate-100" />
                   <rect width={`${r.available > 0 && r.earned > 0 ? Math.min(100, Math.max(2, Math.round((r.available / r.earned) * 100))) : 0}%`} height="100%" className={BAR[r.source]} />
