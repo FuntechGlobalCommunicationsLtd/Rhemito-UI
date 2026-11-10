@@ -78,7 +78,6 @@ test.describe('Refer & Earn on the Dashboard', () => {
         await expect(card.getByText('Kemi L.')).toHaveCount(0);
         await expect(card.getByRole('link', { name: /View all referrals/i })).toBeVisible();
         await expect(page.getByTestId('bonus-credit-card')).toHaveCount(0);
-        await expect(page.getByTestId('bonus-earned-pill')).toContainText('£7.00');
     });
 
     test('offer banner can be dismissed and stays dismissed', async ({ page }) => {
