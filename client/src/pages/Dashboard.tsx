@@ -74,10 +74,10 @@ import {
 } from "@/components/ui/tooltip";
 
 const recentRecipients = [
-  { id: 1, name: "Oluwas...", initials: "OA", color: "bg-blue-500" },
-  { id: 2, name: "Profilea", initials: "PL", color: "bg-purple-500" },
-  { id: 3, name: "Testing...", initials: "T", color: "bg-gray-400" },
-  { id: 4, name: "Steve", initials: "SS", color: "bg-teal" },
+  { id: 1, name: "John", initials: "JD", color: "bg-[#d3e9ff] text-[#323130]" },
+  { id: 2, name: "Ademade", initials: "AO", color: "bg-[#e3fdde] text-[#323130]" },
+  { id: 3, name: "Brown", initials: "JB", color: "bg-[#ffd1b2] text-[#323130]" },
+  { id: 4, name: "Mendoza", initials: "TM", color: "bg-[#d3e9ff] text-[#323130]" },
 ];
 
 const scheduledTransactions = [
@@ -163,8 +163,8 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
       <TableCell className="text-center py-4">
         {scheduled ? (
           <div className="flex items-center justify-center gap-2">
-            <span title="Scheduled" className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span title="Scheduled" className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-[#a79032] border border-amber-200 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-[#a79032] animate-pulse" />
               Scheduled
             </span>
           </div>
@@ -178,10 +178,22 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200 shadow-2xs"
+                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-[#850707] border border-red-200 shadow-2xs"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  <span className="w-2 h-2 rounded-full bg-[#850707]" />
                   Cancelled
+                </motion.span>
+              ) : tx.status === "failed" ? (
+                <motion.span title="Failed"
+                  key="failed"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-[#850707] border border-red-200 shadow-2xs"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#850707]" />
+                  Failed
                 </motion.span>
               ) : tx.status === "completed" ? (
                 <motion.span title="Completed"
@@ -190,9 +202,9 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-[#019b3e] border border-emerald-200 shadow-2xs"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="w-2 h-2 rounded-full bg-[#019b3e]" />
                   Completed
                 </motion.span>
               ) : tx.status === "awaiting_payment" ? (
@@ -202,9 +214,9 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs"
+                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 text-[#ff7013] border border-orange-200 shadow-2xs"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span className="w-2 h-2 rounded-full bg-[#ff7013]" />
                   Awaiting Payment
                 </motion.span>
               ) : (
@@ -214,9 +226,9 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs"
+                  className="status-light inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-[#a79032] border border-amber-200 shadow-2xs"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span className="w-2 h-2 rounded-full bg-[#a79032]" />
                   Pending
                 </motion.span>
               )}
@@ -230,17 +242,17 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
             <Button
               size="sm"
               variant="outline"
-              className="h-8 w-[88px] px-0 text-xs font-medium rounded-full border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all active:scale-95"
+              className="h-7 w-[88px] px-0 text-xs font-semibold rounded-full border-[#b10909] text-[#b10909] hover:bg-red-50 hover:text-[#b10909] transition-all active:scale-95"
               data-testid={`button-cancel-${tx.id}`}
             >
               Cancel
             </Button>
           ) : !isTerminal && !canCancel ? (
-            <span className="inline-flex h-8 w-[88px] items-center justify-center text-gray-300 text-sm">—</span>
+            <span className="inline-flex h-7 w-[88px] items-center justify-center text-gray-300 text-sm">—</span>
           ) : isTerminal ? (
             <Button
               size="sm"
-              className="bg-blue-600 hover:bg-blue-700 text-white h-8 w-[88px] px-0 text-xs font-medium rounded-full shadow-2xs transition-all active:scale-95"
+              className="bg-[#2e5bff] hover:bg-blue-700 text-white h-7 w-[88px] px-0 text-xs font-semibold rounded-full shadow-2xs transition-all active:scale-95"
               data-testid={`button-resend-${tx.id}`}
             >
               Resend
@@ -259,10 +271,10 @@ function SendMoneyRow({ tx, scheduled, onCancel }: { tx: SendMoneyTx; scheduled:
                     size="sm"
                     variant="outline"
                     className={cn(
-                      "h-8 w-[88px] px-0 text-xs font-medium rounded-full",
-                      "text-red-500 border border-red-200 bg-white",
-                      "hover:bg-red-50 hover:border-red-300 hover:text-red-600",
-                      "active:bg-red-100 active:border-red-400",
+                      "h-7 w-[88px] px-0 text-xs font-semibold rounded-full",
+                      "text-[#b10909] border border-[#b10909] bg-white",
+                      "hover:bg-red-50 hover:border-red-700 hover:text-red-700",
+                      "active:bg-red-100 active:border-red-800",
                       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400",
                       "transition-colors duration-150"
                     )}
@@ -1086,7 +1098,7 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 md:gap-4 flex-1 min-w-0">
             <motion.h1
               variants={itemVariants}
-              className="shrink-0 text-xl font-normal tracking-tight text-slate-800 md:text-[22px]"
+              className="shrink-0 text-2xl font-semibold tracking-tight text-[#323130] md:text-[28px]"
             >
               <span data-testid="dashboard-welcome">Welcome{welcomeName(user) ? ` ${welcomeName(user)}` : ""}</span>
             </motion.h1>
@@ -1185,11 +1197,11 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Quick Services Horizontal Pill Bar matching reference screenshot */}
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border border-slate-200/80 bg-white shadow-2xs">
+        {/* Quick Services + Recipients Row matching Figma Option 2 */}
+        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <Card className="lg:col-span-7 rounded-2xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)] flex flex-col justify-center">
             <CardContent className="px-5 py-4">
-              <h3 className="text-sm font-bold text-slate-700 mb-3">
+              <h3 className="text-base font-bold text-[#323130] mb-3">
                 Quick Services
               </h3>
               <div className="flex flex-wrap items-center gap-3">
@@ -1197,7 +1209,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/send-money")}
                   data-testid="button-send-money"
-                  className="h-9 px-7 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer"
+                  className="h-9 px-6 rounded-full bg-[#2e5bff] hover:bg-blue-700 text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer"
                 >
                   Send Money
                 </button>
@@ -1205,7 +1217,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/request-payment")}
                   data-testid="button-request-payment"
-                  className="h-9 px-7 rounded-full border border-blue-500 bg-white hover:bg-blue-50 text-blue-600 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Receive Money
                 </button>
@@ -1213,7 +1225,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/bonus-discounts")}
                   data-testid="button-bonus-discounts"
-                  className="h-9 px-7 rounded-full border border-blue-400 bg-blue-50/80 hover:bg-blue-100/80 text-blue-600 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-9 px-6 rounded-full border border-blue-400 bg-blue-50/80 hover:bg-blue-100/80 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Reward$
                 </button>
@@ -1221,7 +1233,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/send-invoice")}
                   data-testid="button-send-invoice"
-                  className="h-9 px-7 rounded-full border border-blue-500 bg-white hover:bg-blue-50 text-blue-600 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Send Invoice
                 </button>
@@ -1229,10 +1241,54 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setLocation("/group-pay/create")}
                   data-testid="button-funding-campaigns"
-                  className="h-9 px-7 rounded-full border border-blue-500 bg-white hover:bg-blue-50 text-blue-600 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  className="h-9 px-6 rounded-full border border-[#2e5bff] bg-white hover:bg-blue-50 text-[#2e5bff] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                 >
                   Funding Campaigns
                 </button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            data-testid="section-recent-recipients"
+            className="lg:col-span-5 rounded-2xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)] flex flex-col justify-center"
+          >
+            <CardContent className="px-5 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-[#323130]">
+                  Recipients
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setLocation("/senders-recipients")}
+                  className="text-xs font-semibold text-[#605e5c] hover:text-[#2e5bff] transition-colors cursor-pointer"
+                  data-testid="button-view-all-recipients"
+                >
+                  View all
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2 px-1">
+                {recentRecipients.map((recipient) => (
+                  <button
+                    key={recipient.id}
+                    type="button"
+                    onClick={() => setLocation("/send-money")}
+                    data-testid={`recipient-quick-${recipient.id}`}
+                    className="flex flex-col items-center gap-2 group cursor-pointer"
+                  >
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-transform group-hover:scale-105",
+                        recipient.color
+                      )}
+                    >
+                      {recipient.initials}
+                    </div>
+                    <span className="text-xs font-semibold text-[#323130] group-hover:text-[#2e5bff] transition-colors">
+                      {recipient.name}
+                    </span>
+                  </button>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -1442,12 +1498,12 @@ export default function Dashboard() {
           ref={transactionsSectionRef}
           data-testid="section-transactions"
         >
-          <Card className="rounded-2xl border border-slate-200/80 bg-white shadow-2xs overflow-hidden">
+          <Card className="rounded-2xl border border-[#efefee] bg-white shadow-[-2px_4px_16px_0px_rgba(0,0,0,0.04)] overflow-hidden">
             <CardContent className="p-0">
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 md:px-6 pt-5 pb-3">
                   <div className="flex items-center gap-2.5">
-                    <h2 className="font-display font-bold text-base md:text-lg text-slate-800 tracking-tight">
+                    <h2 className="font-display font-bold text-base md:text-lg text-[#605e5c] tracking-tight">
                       Recent Transactions
                     </h2>
                   </div>
@@ -1587,25 +1643,25 @@ export default function Dashboard() {
                     <Table>
                       <TableHeader>
                         <TableRow className="hover:bg-transparent border-b border-slate-100">
-                          <TableHead className="text-xs font-bold text-slate-600 py-3.5 pl-4 sm:pl-6">
+                          <TableHead className="text-xs font-bold text-[#323130] py-3.5 pl-4 sm:pl-6">
                             Order No
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 hidden sm:table-cell py-3.5">
+                          <TableHead className="text-xs font-bold text-[#323130] hidden sm:table-cell py-3.5">
                             Date / Time GMT
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 py-3.5">
+                          <TableHead className="text-xs font-bold text-[#323130] py-3.5">
                             Name
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 hidden md:table-cell py-3.5">
+                          <TableHead className="text-xs font-bold text-[#323130] hidden md:table-cell py-3.5">
                             Service Type
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 py-3.5 hidden sm:table-cell">
+                          <TableHead className="text-xs font-bold text-[#323130] py-3.5 hidden sm:table-cell">
                             Amount
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 text-center py-3.5">
+                          <TableHead className="text-xs font-bold text-[#323130] text-center py-3.5">
                             Status
                           </TableHead>
-                          <TableHead className="text-xs font-bold text-slate-600 text-center py-3.5 pr-4 sm:pr-6">
+                          <TableHead className="text-xs font-bold text-[#323130] text-center py-3.5 pr-4 sm:pr-6">
                             Actions
                           </TableHead>
                         </TableRow>
