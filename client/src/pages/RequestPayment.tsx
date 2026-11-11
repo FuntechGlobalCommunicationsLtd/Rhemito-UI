@@ -1127,7 +1127,7 @@ export default function RequestPayment() {
                             data-testid="mode-exact"
                           >
                             <span className={`block text-sm font-bold font-display ${!formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive exact amount</span>
-                            <span className="block text-xs text-muted-foreground">The payer covers the 3% fee on top.</span>
+                            <span className="block text-xs text-muted-foreground">The payer will cover all fees and commission (3%) on top.</span>
                           </button>
                           <button
                             type="button"
