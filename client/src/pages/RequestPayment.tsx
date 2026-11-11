@@ -1115,6 +1115,33 @@ export default function RequestPayment() {
                         </div>
                       )}
 
+                      {/* How should this request work? */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">How should this request work?</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Request type">
+                          <button
+                            type="button"
+                            aria-pressed={!formData.absorbFee}
+                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", false); }}
+                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${!formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
+                            data-testid="mode-exact"
+                          >
+                            <span className={`block text-sm font-bold font-display ${!formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive exact amount</span>
+                            <span className="block text-xs text-muted-foreground">The payer covers the 3% fee on top.</span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={formData.absorbFee}
+                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", true); }}
+                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
+                            data-testid="mode-less"
+                          >
+                            <span className={`block text-sm font-bold font-display ${formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive amount less charges</span>
+                            <span className="block text-xs text-muted-foreground">The 3% fee comes out of what you receive.</span>
+                          </button>
+                        </div>
+                      </div>
+
                       {/* You receive */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between min-h-[28px]">
@@ -1195,33 +1222,6 @@ export default function RequestPayment() {
                           </div>
                         </div>
                       )}
-
-                      {/* How should this request work? */}
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">How should this request work?</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Request type">
-                          <button
-                            type="button"
-                            aria-pressed={!formData.absorbFee}
-                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", false); }}
-                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${!formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
-                            data-testid="mode-exact"
-                          >
-                            <span className={`block text-sm font-bold font-display ${!formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive exact amount</span>
-                            <span className="block text-xs text-muted-foreground">School fees, invoices. The payer covers the 3% fee on top.</span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={formData.absorbFee}
-                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", true); }}
-                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
-                            data-testid="mode-less"
-                          >
-                            <span className={`block text-sm font-bold font-display ${formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive amount less charges</span>
-                            <span className="block text-xs text-muted-foreground">Gifts, donations. The 3% fee comes out of what you receive.</span>
-                          </button>
-                        </div>
-                      </div>
 
                       {/* Payer sends */}
                       <div className="space-y-2">
