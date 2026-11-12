@@ -399,6 +399,33 @@ export async function syncAdminCrudSnapshot(): Promise<void> {
   }
 }
 
+/** Formats LIVE referral offer announcement copy to match approved Rhemito wording. */
+export function formatOfferNoticeMessage(message: unknown, kind?: unknown): string {
+  const raw = String(message ?? "").trim();
+  const k = kind ? String(kind).toUpperCase() : "";
+  if (!raw || (k && k !== "LIVE")) return raw;
+
+  const inviteMatch = raw.match(
+    /^Invite friends and get (.+?) each time they send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.(?:\s*Your friend gets (.+?) too\.)?$/i,
+  );
+  if (inviteMatch) {
+    const referrerAmount = inviteMatch[1];
+    const refereeAmount = inviteMatch[2];
+    return `Invite friends and get ${referrerAmount} each time they sign up via your link and complete a successful transaction.${
+      refereeAmount ? ` Your friend gets ${refereeAmount} too on sign-up.` : ""
+    }`;
+  }
+
+  const refereeOnlyMatch = raw.match(
+    /^Give friends (.+?) when they join with your link and send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.$/i,
+  );
+  if (refereeOnlyMatch) {
+    return `Give friends ${refereeOnlyMatch[1]} on sign-up when they join via your link.`;
+  }
+
+  return raw;
+}
+
 /** Fan out new offer notifications from the engine to customers in that currency. */
 export async function pollOfferNotifications(): Promise<number> {
   let delivered = 0;
@@ -411,7 +438,7 @@ export async function pollOfferNotifications(): Promise<number> {
       lastOfferNotificationId = Math.max(lastOfferNotificationId, Number(n.id));
       for (const u of users) {
         if (u.status !== "active" || !sendCurrenciesForCountry(u.country).includes(String(n.currency).toUpperCase())) continue;
-        await notify(u.id, "reward_offer", { title: n.title, message: n.message, offerId: n.id });
+        await notify(u.id, "reward_offer", { title: n.title, message: formatOfferNoticeMessage(n.message, n.kind), offerId: n.id });
         delivered++;
       }
     }
