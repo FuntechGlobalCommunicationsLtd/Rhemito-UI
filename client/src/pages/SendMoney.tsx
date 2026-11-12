@@ -3364,64 +3364,56 @@ export default function SendMoney() {
                                                     />
                                                     {step3Errors.relationship && <p className="text-xs text-red-500">{step3Errors.relationship}</p>}
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <Label>Nickname (Optional)</Label>
-                                                    <Input
-                                                        placeholder="e.g. My Brother"
-                                                        value={recipientDetails.nickName}
-                                                        onChange={e => setRecipientDetails({ ...recipientDetails, nickName: e.target.value })}
-                                                    />
-                                                </div>
-                                            </div>
 
-                                            <div className="space-y-2">
-                                                <Label>Reason for transfer <span className="text-destructive">*</span></Label>
-                                                <SearchableSelect
-                                                    value={recipientDetails.reason}
-                                                    placeholder="Select or type reason for transfer"
-                                                    className={step3Errors.reason ? "[&>div]:border-red-500" : ""}
-                                                    options={
-                                                        mitoLookupReasons.length > 0
-                                                            ? mitoLookupReasons.map((rsn) => ({ value: rsn.code, label: rsn.name }))
-                                                            : [
-                                                                  { value: "family_support", label: "Family Support" },
-                                                                  { value: "education", label: "Education" },
-                                                                  { value: "bills", label: "Bills" },
-                                                                  { value: "medical", label: "Medical Expenses" },
-                                                                  { value: "other", label: "Other" },
-                                                              ]
-                                                    }
-                                                    onValueChange={(val) => {
-                                                        clearStep3Error("reason");
-                                                        const rsnOpts = beneficiaryRequirements.find((r) => r.name === "beneficiaryReasonId")?.dropdownOptions || [];
-                                                        const matchedLookup = mitoLookupReasons.find((r) => r.code === val || r.name.toLowerCase() === val.toLowerCase());
-                                                        const matchedReq = rsnOpts.find(
-                                                            (o) =>
-                                                                o.id === val ||
-                                                                o.name.toLowerCase() === val.toLowerCase() ||
-                                                                (matchedLookup && o.name.toLowerCase() === matchedLookup.name.toLowerCase()),
-                                                        );
-                                                        setRecipientDetails(prev => ({
-                                                            ...prev,
-                                                            reason: val,
-                                                            reasonId: matchedReq ? matchedReq.id : prev.reasonId,
-                                                        }));
-                                                        if (selectedRecipient) {
-                                                            saveBeneficiaryTxnMeta(
-                                                                {
-                                                                    beneficiaryId: selectedRecipient.beneficiaryId || selectedRecipient.id,
-                                                                    name: selectedRecipient.name,
-                                                                    account: selectedRecipient.account,
-                                                                },
-                                                                {
-                                                                    reason: val,
-                                                                    reasonId: matchedReq ? matchedReq.id : recipientDetails.reasonId,
-                                                                },
-                                                            );
+                                                <div className="space-y-2">
+                                                    <Label>Reason for transfer <span className="text-destructive">*</span></Label>
+                                                    <SearchableSelect
+                                                        value={recipientDetails.reason}
+                                                        placeholder="Select or type reason for transfer"
+                                                        className={step3Errors.reason ? "[&>div]:border-red-500" : ""}
+                                                        options={
+                                                            mitoLookupReasons.length > 0
+                                                                ? mitoLookupReasons.map((rsn) => ({ value: rsn.code, label: rsn.name }))
+                                                                : [
+                                                                      { value: "family_support", label: "Family Support" },
+                                                                      { value: "education", label: "Education" },
+                                                                      { value: "bills", label: "Bills" },
+                                                                      { value: "medical", label: "Medical Expenses" },
+                                                                      { value: "other", label: "Other" },
+                                                                  ]
                                                         }
-                                                    }}
-                                                />
-                                                {step3Errors.reason && <p className="text-xs text-red-500">{step3Errors.reason}</p>}
+                                                        onValueChange={(val) => {
+                                                            clearStep3Error("reason");
+                                                            const rsnOpts = beneficiaryRequirements.find((r) => r.name === "beneficiaryReasonId")?.dropdownOptions || [];
+                                                            const matchedLookup = mitoLookupReasons.find((r) => r.code === val || r.name.toLowerCase() === val.toLowerCase());
+                                                            const matchedReq = rsnOpts.find(
+                                                                (o) =>
+                                                                    o.id === val ||
+                                                                    o.name.toLowerCase() === val.toLowerCase() ||
+                                                                    (matchedLookup && o.name.toLowerCase() === matchedLookup.name.toLowerCase()),
+                                                            );
+                                                            setRecipientDetails(prev => ({
+                                                                ...prev,
+                                                                reason: val,
+                                                                reasonId: matchedReq ? matchedReq.id : prev.reasonId,
+                                                            }));
+                                                            if (selectedRecipient) {
+                                                                saveBeneficiaryTxnMeta(
+                                                                    {
+                                                                        beneficiaryId: selectedRecipient.beneficiaryId || selectedRecipient.id,
+                                                                        name: selectedRecipient.name,
+                                                                        account: selectedRecipient.account,
+                                                                    },
+                                                                    {
+                                                                        reason: val,
+                                                                        reasonId: matchedReq ? matchedReq.id : recipientDetails.reasonId,
+                                                                    },
+                                                                );
+                                                            }
+                                                        }}
+                                                    />
+                                                    {step3Errors.reason && <p className="text-xs text-red-500">{step3Errors.reason}</p>}
+                                                </div>
                                             </div>
 
                                             {(recipientDetails.reason === "other" || recipientDetails.reason === "OTHERS") && (
@@ -3590,6 +3582,15 @@ export default function SendMoney() {
                                                         <p className="text-xs text-amber-600">Narration is required for Nigerian accounts.</p>
                                                     )
                                                 )}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label>Nickname (Optional)</Label>
+                                                <Input
+                                                    placeholder="e.g. My Brother"
+                                                    value={recipientDetails.nickName}
+                                                    onChange={e => setRecipientDetails({ ...recipientDetails, nickName: e.target.value })}
+                                                />
                                             </div>
                                         </CardContent>
                                     </Card>

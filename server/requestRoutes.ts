@@ -18,6 +18,7 @@ import {
   checkEligibility,
   createMoneyRequest,
   createPayinIntent,
+  releasePayinIntent,
   cancelRequest,
   extendExpiry,
   resendRequestEmail,
@@ -37,6 +38,8 @@ import {
   markSenderEmailKnown,
   getPayerSavedAccounts,
   savePayerBankAccountForEmail,
+  ALREADY_PAID_MESSAGE,
+  PAYMENT_IN_PROGRESS_MESSAGE,
 } from "./requestService";
 import { devEmailProvider, listRecentMailjetWebhookEvents } from "./providers";
 import { getFxRate } from "./fxService";
@@ -389,7 +392,8 @@ export function registerRequestMoneyRoutes(app: Express): void {
       }
       markViewed(request);
       const currentUserId = req.session?.userId;
-      return res.json({ data: toPublicRequestJSON(request, false, currentUserId) });
+      const currentUser = currentUserId ? await storage.getAuthUserById(currentUserId) : undefined;
+      return res.json({ data: toPublicRequestJSON(request, false, currentUserId, currentUser?.email) });
     } catch (err) {
       return handleError(res, err);
     }
@@ -405,7 +409,8 @@ export function registerRequestMoneyRoutes(app: Express): void {
       }
       markViewed(request);
       const currentUserId = req.session?.userId;
-      return res.json({ data: toPublicRequestJSON(request, true, currentUserId) });
+      const currentUser = currentUserId ? await storage.getAuthUserById(currentUserId) : undefined;
+      return res.json({ data: toPublicRequestJSON(request, true, currentUserId, currentUser?.email) });
     } catch (err) {
       return handleError(res, err);
     }
@@ -507,16 +512,46 @@ export function registerRequestMoneyRoutes(app: Express): void {
         ? updated.businessName
         : [updated.firstName, updated.middleName, updated.lastName].filter(Boolean).join(" ") || normalized;
 
-    if (request && (!request.senderName || request.senderEmail?.toLowerCase() === normalized)) {
+    if (
+      request
+      && ["active", "viewed"].includes(effectiveStatus(request))
+      && profile?.dateOfBirth
+      && !request.senderDob
+    ) {
       await storage.updateMoneyRequest(request.id, {
-        payerUserId: updated.id,
-        payerEmail: normalized,
-        payerName,
-        ...(profile?.dateOfBirth ? { senderDob: profile.dateOfBirth } : {}),
+        senderDob: profile.dateOfBirth,
       });
     }
 
     return { user: updated, payerName };
+  };
+
+  const rejectIfRequestUnavailableForPayer = (
+    request: NonNullable<Awaited<ReturnType<typeof getRequestByTokenOrEmailToken>>>,
+    res: Response,
+    allowReservingUserId?: string,
+  ): boolean => {
+    const status = effectiveStatus(request);
+    if (status === "paid_out" || status === "funded" || status === "payout_pending") {
+      res.status(409).json({ error: { code: "ALREADY_PAID", message: ALREADY_PAID_MESSAGE } });
+      return true;
+    }
+    if (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(status)) {
+      if (allowReservingUserId && request.payerUserId === allowReservingUserId) {
+        return false;
+      }
+      res.status(409).json({ error: { code: "PAYMENT_IN_PROGRESS", message: PAYMENT_IN_PROGRESS_MESSAGE } });
+      return true;
+    }
+    if (status === "cancelled") {
+      res.status(409).json({ error: { code: "CANCELLED", message: "This payment request was cancelled by the requester." } });
+      return true;
+    }
+    if (status === "expired") {
+      res.status(410).json({ error: { code: "EXPIRED", message: "This payment request has expired." } });
+      return true;
+    }
+    return false;
   };
 
   // When a payer pastes or clicks a shared link (/pay/:token), we do not know their
@@ -534,8 +569,8 @@ export function registerRequestMoneyRoutes(app: Express): void {
       if (!request) {
         return res.status(404).json({ error: { code: "NOT_FOUND", message: "This payment link is not valid." } });
       }
-      if (!["active", "viewed"].includes(effectiveStatus(request))) {
-        return res.status(409).json({ error: { code: "INVALID_STATE", message: "This request cannot accept a new payment." } });
+      if (rejectIfRequestUnavailableForPayer(request, res)) {
+        return;
       }
       const email = parsed.data.email.toLowerCase();
       const allowRegistered = req.body?.allowRegistered !== false;
@@ -641,6 +676,10 @@ export function registerRequestMoneyRoutes(app: Express): void {
       if (verification.failedAttempts >= 5) {
         return res.status(429).json({ error: { code: "PIN_LOCKED", message: "Too many incorrect attempts. Request a new PIN later." } });
       }
+      const request = await getRequestByTokenOrEmailToken(token, isEmailLink);
+      if (request && rejectIfRequestUnavailableForPayer(request, res)) {
+        return;
+      }
       const otp = code.length === 6 ? await storage.getValidOtp(email, code) : undefined;
       if (!otp) {
         verification.failedAttempts += 1;
@@ -649,7 +688,6 @@ export function registerRequestMoneyRoutes(app: Express): void {
       await storage.markOtpUsed(otp.id);
       verification.verified = true;
 
-      const request = await getRequestByTokenOrEmailToken(token, isEmailLink);
       if (req.body?.authenticatePayer && request) {
         const { payerName } = await ensurePayerUserSession(req, request, email, {
           accountType: req.body?.accountType,
@@ -687,8 +725,8 @@ export function registerRequestMoneyRoutes(app: Express): void {
       if (!request) {
         return res.status(404).json({ error: { code: "NOT_FOUND", message: "This payment link is not valid." } });
       }
-      if (!["active", "viewed"].includes(effectiveStatus(request))) {
-        return res.status(409).json({ error: { code: "INVALID_STATE", message: "This request cannot accept a new payment." } });
+      if (rejectIfRequestUnavailableForPayer(request, res)) {
+        return;
       }
       const email = String(req.body?.email || request.senderEmail || "").trim().toLowerCase();
       if (!email) {
@@ -725,6 +763,9 @@ export function registerRequestMoneyRoutes(app: Express): void {
       if (!request) {
         return res.status(404).json({ error: { code: "NOT_FOUND", message: "This payment link is not valid." } });
       }
+      if (rejectIfRequestUnavailableForPayer(request, res, req.session?.userId)) {
+        return;
+      }
       const bankName = String(req.body?.bankName ?? "").trim();
       const accountNumber = String(req.body?.accountNumber ?? "").trim().replace(/\D/g, "");
       const accountName = String(req.body?.accountName ?? "").trim() || request.payerName || request.senderName || "Verified Sender";
@@ -735,10 +776,17 @@ export function registerRequestMoneyRoutes(app: Express): void {
         return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Select a bank and enter a valid account number." } });
       }
 
-      await storage.updateMoneyRequest(request.id, {
-        payerSourceBankName: bankName,
-        payerSourceAccountMasked: maskAccountNumber(accountNumber),
-      });
+      // Never overwrite requester-provided bank details or leak across concurrent payers
+      if (
+        request.payerSourceOrigin !== "requester"
+        && !request.payerSourceBankName
+        && !request.payerSourceAccountMasked
+      ) {
+        await storage.updateMoneyRequest(request.id, {
+          payerSourceBankName: bankName,
+          payerSourceAccountMasked: maskAccountNumber(accountNumber),
+        });
+      }
 
       let savedAccount = {
         id: `acc_${Date.now()}`,
@@ -827,6 +875,30 @@ export function registerRequestMoneyRoutes(app: Express): void {
   app.post("/api/public/requests/:token/pay-intent", (req, res) => handlePayIntent(req, res, false));
   app.post("/api/public/requests/e/:emailToken/pay-intent", (req, res) => handlePayIntent(req, res, true));
   app.post("/api/public/requests/:token/intent", (req, res) => handlePayIntent(req, res, false));
+
+  // 4B. Release un-settled Pay Intent when reserving payer backs out or cancels
+  const handleReleaseIntent = async (req: Request, res: Response, isEmailLink: boolean) => {
+    try {
+      if (!enforceRateLimit(req, res, "paymentIntent")) return;
+      const token = req.params.token || req.params.emailToken;
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: { code: "UNAUTHENTICATED", message: "Please sign in to continue." } });
+      }
+      const result = await releasePayinIntent({
+        token,
+        isEmailLink,
+        userId,
+        intentId: typeof req.body?.intentId === "string" ? req.body.intentId : null,
+      });
+      return res.json({ data: result });
+    } catch (err) {
+      return handleError(res, err);
+    }
+  };
+
+  app.post("/api/public/requests/:token/release-intent", (req, res) => handleReleaseIntent(req, res, false));
+  app.post("/api/public/requests/e/:emailToken/release-intent", (req, res) => handleReleaseIntent(req, res, true));
 
   // 5. Request New Payment Link (Expired request renewal)
   const handleRequestNewLink = async (req: Request, res: Response, isEmailLink: boolean) => {
@@ -959,7 +1031,7 @@ export function registerRequestMoneyRoutes(app: Express): void {
       type: "payment.succeeded" as const,
       intentId: req.params.intentId,
       requestNumber: request.requestNumber,
-      amountMinor: request.payInAmountMinor,
+      amountMinor: senderPaysMinorOf(request.payInAmountMinor, request.feeMinor, request.absorbFee),
       currency: request.payInCurrency,
       providerPaymentRef: `devpay_${req.params.intentId}`,
     };

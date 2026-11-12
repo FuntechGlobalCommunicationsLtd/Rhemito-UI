@@ -125,6 +125,7 @@ export interface PublicRequestView {
   activeSessionId?: string | null;
   sessionExpiresAt?: string | null;
   isReservedByOther?: boolean;
+  isPaidByCurrentUser?: boolean;
   legalEntity: {
     displayName: string;
     legalName: string;
@@ -481,6 +482,28 @@ export async function createIntent(token: string, method: string, sessionId: str
   const json = await res.json().catch(() => null);
   if (!res.ok) {
     throw Object.assign(new Error(json?.error?.message ?? "The payment could not be started."), {
+      status: res.status,
+      code: json?.error?.code,
+    });
+  }
+  return json.data;
+}
+
+export async function releaseIntent(
+  token: string,
+  intentId?: string | null,
+  isEmailLink = false,
+): Promise<{ released: boolean; sessionId: string | null }> {
+  const prefix = isEmailLink ? "/api/public/requests/e/" : "/api/public/requests/";
+  const res = await fetch(`${prefix}${encodeURIComponent(token)}/release-intent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ intentId: intentId ?? null }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw Object.assign(new Error(json?.error?.message ?? "Could not release payment reservation."), {
       status: res.status,
       code: json?.error?.code,
     });

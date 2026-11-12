@@ -1115,6 +1115,33 @@ export default function RequestPayment() {
                         </div>
                       )}
 
+                      {/* How should this request work? */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">How should this request work?</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Request type">
+                          <button
+                            type="button"
+                            aria-pressed={!formData.absorbFee}
+                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", false); }}
+                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${!formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
+                            data-testid="mode-exact"
+                          >
+                            <span className={`block text-sm font-bold font-display ${!formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive exact amount</span>
+                            <span className="block text-xs text-muted-foreground">The payer will cover all fees and commission (3%) on top.</span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={formData.absorbFee}
+                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", true); }}
+                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
+                            data-testid="mode-less"
+                          >
+                            <span className={`block text-sm font-bold font-display ${formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive amount less charges</span>
+                            <span className="block text-xs text-muted-foreground">All the fees and commission will be charged from the amount you receive.</span>
+                          </button>
+                        </div>
+                      </div>
+
                       {/* You receive */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between min-h-[28px]">
@@ -1195,33 +1222,6 @@ export default function RequestPayment() {
                           </div>
                         </div>
                       )}
-
-                      {/* How should this request work? */}
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">How should this request work?</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Request type">
-                          <button
-                            type="button"
-                            aria-pressed={!formData.absorbFee}
-                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", false); }}
-                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${!formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
-                            data-testid="mode-exact"
-                          >
-                            <span className={`block text-sm font-bold font-display ${!formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive exact amount</span>
-                            <span className="block text-xs text-muted-foreground">School fees, invoices. The payer covers the 3% fee on top.</span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={formData.absorbFee}
-                            onClick={() => { setReceiveDraft(null); setPayerDraft(null); handleInputChange("absorbFee", true); }}
-                            className={`text-left rounded-xl border-2 p-3.5 min-h-[44px] transition-colors ${formData.absorbFee ? "border-primary bg-primary/5" : "border-border bg-card hover:border-slate-300"}`}
-                            data-testid="mode-less"
-                          >
-                            <span className={`block text-sm font-bold font-display ${formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive amount less charges</span>
-                            <span className="block text-xs text-muted-foreground">Gifts, donations. The 3% fee comes out of what you receive.</span>
-                          </button>
-                        </div>
-                      </div>
 
                       {/* Payer sends */}
                       <div className="space-y-2">
@@ -1361,48 +1361,6 @@ export default function RequestPayment() {
                 {currentStep === 2 && (
                   <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                     <div className="lg:col-span-3 space-y-5">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 px-3.5 py-2.5 text-sm" data-testid="request-summary">
-                        <span>You receive <strong className="tabular-nums whitespace-nowrap">{senderCurrency === payoutCurrency ? `${payoutSymbol}${netBeforeFx.toFixed(2)}` : fxFinite ? `${payoutSymbol}${receiveInPayout.toFixed(2)}` : `${senderSymbol}${netBeforeFx.toFixed(2)}`}</strong></span>
-                        <span>Payer sends <strong className="tabular-nums whitespace-nowrap">{senderSymbol}{senderPaysAmount.toFixed(2)}</strong></span>
-                        <button type="button" onClick={() => setCurrentStep(1)} className="font-semibold text-primary" data-testid="button-edit-amount">Edit amount</button>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center min-h-[24px]">
-                          <Label htmlFor="note" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-800 leading-none">
-                            <span>Description / Invoice Note</span>
-                            <FieldTag />
-                          </Label>
-                        </div>
-                        <Textarea
-                          id="note"
-                          rows={3}
-                          maxLength={100}
-                          placeholder="What is this payment for?"
-                          value={formData.note}
-                          onChange={(e) => handleInputChange("note", e.target.value)}
-                          data-testid="input-note"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center min-h-[24px]">
-                          <Label htmlFor="invoiceReference" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-800 leading-none">
-                            <span>Invoice Reference</span>
-                            <FieldTag />
-                          </Label>
-                        </div>
-                        <Input
-                          id="invoiceReference"
-                          placeholder="e.g. INV-2041"
-                          maxLength={40}
-                          value={formData.invoiceReference}
-                          onChange={(e) => handleInputChange("invoiceReference", e.target.value)}
-                          data-testid="input-invoice-reference"
-                        />
-                        <p className="text-xs text-muted-foreground">No invoice needed. Add a reference only if you have one.</p>
-                      </div>
-
                       <div className="space-y-2">
                         <div className="flex items-center min-h-[24px]">
                           <Label htmlFor="reason" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-800 leading-none">
@@ -1555,6 +1513,42 @@ export default function RequestPayment() {
                             <Check className="w-3.5 h-3.5" /> {formData.payerName}
                           </p>
                         )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center min-h-[24px]">
+                          <Label htmlFor="note" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-800 leading-none">
+                            <span>Description / Invoice Note</span>
+                            <FieldTag />
+                          </Label>
+                        </div>
+                        <Textarea
+                          id="note"
+                          rows={3}
+                          maxLength={100}
+                          placeholder="What is this payment for?"
+                          value={formData.note}
+                          onChange={(e) => handleInputChange("note", e.target.value)}
+                          data-testid="input-note"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center min-h-[24px]">
+                          <Label htmlFor="invoiceReference" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-800 leading-none">
+                            <span>Invoice Reference</span>
+                            <FieldTag />
+                          </Label>
+                        </div>
+                        <Input
+                          id="invoiceReference"
+                          placeholder="e.g. INV-2041"
+                          maxLength={40}
+                          value={formData.invoiceReference}
+                          onChange={(e) => handleInputChange("invoiceReference", e.target.value)}
+                          data-testid="input-invoice-reference"
+                        />
+                        <p className="text-xs text-muted-foreground">No invoice needed. Add a reference only if you have one.</p>
                       </div>
 
                       {/* Payer details (collapsible, optional) */}

@@ -261,6 +261,19 @@ export default function CreateCampaign() {
                                             )}
                                         </div>
 
+                                        {/* Description */}
+                                        <div className="space-y-2">
+                                            <Label htmlFor="description">Description *</Label>
+                                            <Textarea
+                                                id="description"
+                                                placeholder="Describe what this campaign is for..."
+                                                rows={3}
+                                                value={formData.description}
+                                                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                                required
+                                            />
+                                        </div>
+
                                         {/* Fixed Contribution Amount Toggle */}
                                         <div className="space-y-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
                                             <div className="flex items-center justify-between">
@@ -356,19 +369,6 @@ export default function CreateCampaign() {
                                                     )}
                                                 </motion.div>
                                             )}
-                                        </div>
-
-                                        {/* Description */}
-                                        <div className="space-y-2">
-                                            <Label htmlFor="description">Description *</Label>
-                                            <Textarea
-                                                id="description"
-                                                placeholder="Describe what this campaign is for..."
-                                                rows={3}
-                                                value={formData.description}
-                                                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                                                required
-                                            />
                                         </div>
 
                                         {/* Submit */}

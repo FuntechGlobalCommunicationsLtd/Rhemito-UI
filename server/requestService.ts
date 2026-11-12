@@ -886,8 +886,55 @@ async function getOwnRequest(userId: string, requestId: string): Promise<MoneyRe
   return request;
 }
 
+async function releaseExpiredReservationIfNeeded(request: MoneyRequest, now = new Date()): Promise<MoneyRequest> {
+  if (
+    !["authorisation_in_progress", "payment_processing"].includes(request.status)
+    || !request.reservedAttemptId
+  ) {
+    return request;
+  }
+  const attempt = await storage.getPaymentAttemptById(request.reservedAttemptId);
+  // Only auto-release pre-authorisation reservations ("authorisation_initiated") whose 10-minute session expired.
+  // Never auto-release attempts where a provider has already reported "pending" or "unknown".
+  if (
+    !attempt
+    || attempt.status !== "authorisation_initiated"
+    || !attempt.sessionExpiresAt
+    || now.getTime() < attempt.sessionExpiresAt.getTime()
+  ) {
+    return request;
+  }
+
+  const nextStatus = now.getTime() >= request.expiresAt.getTime() ? "expired" : "viewed";
+  const released = await storage.compareAndUpdateMoneyRequest(
+    request.id,
+    ["authorisation_in_progress", "payment_processing"],
+    {
+      status: nextStatus,
+      paymentInitiatedAt: null,
+      payinIntentId: null,
+      paymentMethod: null,
+      reservedAttemptId: null,
+      payerUserId: null,
+      payerName: null,
+      payerEmail: null,
+      payerEmailMasked: null,
+    },
+  );
+  if (!released) {
+    return (await storage.getMoneyRequestById(request.id)) ?? request;
+  }
+  await storage.updatePaymentAttempt(attempt.id, {
+    status: "session_expired",
+    failureReason: "Payment session expired before payment completion.",
+    completedAt: now,
+  });
+  return released;
+}
+
 export async function getRequestByToken(token: string): Promise<MoneyRequest | undefined> {
-  return storage.getMoneyRequestByTokenHash(hashToken(token));
+  const found = await storage.getMoneyRequestByTokenHash(hashToken(token));
+  return found ? releaseExpiredReservationIfNeeded(found) : undefined;
 }
 
 export async function getRequestByTokenOrEmailToken(
@@ -895,10 +942,10 @@ export async function getRequestByTokenOrEmailToken(
   isEmailLink = false,
 ): Promise<MoneyRequest | undefined> {
   const hash = hashToken(tokenOrEmailToken);
-  if (isEmailLink) {
-    return storage.getMoneyRequestByEmailTokenHash(hash);
-  }
-  return storage.getMoneyRequestByTokenHash(hash);
+  const found = isEmailLink
+    ? await storage.getMoneyRequestByEmailTokenHash(hash)
+    : await storage.getMoneyRequestByTokenHash(hash);
+  return found ? releaseExpiredReservationIfNeeded(found) : undefined;
 }
 
 /** Effective status incl. real-time expiry for pre-funding states. */
@@ -912,10 +959,27 @@ export function effectiveStatus(request: MoneyRequest, now = new Date()): Reques
 
 // ─── Public projection (minimum data for the payer — no requester bank details) ─────────
 
-export function toPublicRequestJSON(request: MoneyRequest, isEmailLink = false, currentUserId?: string) {
+export const ALREADY_PAID_MESSAGE =
+  "This payment request is no longer valid because the payment is already complete (paid by someone else). Only one full payment can be made for this amount.";
+export const PAYMENT_IN_PROGRESS_MESSAGE =
+  "Another payer is currently completing the payment for this request. Only one full payment can be made for this amount.";
+
+export function toPublicRequestJSON(
+  request: MoneyRequest,
+  isEmailLink = false,
+  currentUserId?: string,
+  currentUserEmail?: string,
+) {
   const corridor = findCorridor(request.corridorId);
   const now = new Date();
+  const effective = effectiveStatus(request, now);
   const senderPaysMinor = senderPaysMinorOf(request.payInAmountMinor, request.feeMinor, request.absorbFee);
+  const isPaidStatus = ["funded", "payout_pending", "paid_out"].includes(effective);
+  const isProcessingStatus = ["authorisation_in_progress", "payment_processing", "payment_pending"].includes(effective);
+  const isPaidByCurrentUser =
+    isPaidStatus && Boolean(currentUserId && request.payerUserId && request.payerUserId === currentUserId);
+  const isReservedByCurrentUser =
+    isProcessingStatus && Boolean(currentUserId && request.payerUserId && request.payerUserId === currentUserId);
 
   let sessionExpired = false;
   if (request.sessionExpiresAt && now.getTime() >= request.sessionExpiresAt.getTime()) {
@@ -926,7 +990,12 @@ export function toPublicRequestJSON(request: MoneyRequest, isEmailLink = false, 
   const isKnownSender = normalizedSenderEmail
     ? verifiedSenderEmails.has(normalizedSenderEmail) || !!request.senderName?.trim()
     : false;
-  const savedAccounts = getPayerSavedAccounts(isEmailLink ? request.senderEmail : (request.payerEmail || request.senderEmail), request);
+  const savedAccountsEmail =
+    currentUserEmail
+    || (isEmailLink
+      ? request.senderEmail
+      : (isPaidByCurrentUser || isReservedByCurrentUser ? request.payerEmail : request.senderEmail));
+  const savedAccounts = getPayerSavedAccounts(savedAccountsEmail, request);
   const numericRef = String(
     parseInt(createHash("sha256").update(request.requestNumber).digest("hex").slice(0, 8), 16) % 90_000_000 + 10_000_000,
   );
@@ -981,16 +1050,19 @@ export function toPublicRequestJSON(request: MoneyRequest, isEmailLink = false, 
         ? partiallyMaskSenderAccount(requestPayerFullAccountById.get(request.id) || request.payerSourceAccountMasked || "")
         : null,
     payerSavedAccounts: savedAccounts,
-    collectionAccount: {
-      accountName: `PWA - MITO-${request.requesterName.toUpperCase()}`,
-      bankName: request.payInCurrency === "NGN" ? "Fidelity" : request.payInCurrency === "GBP" ? "ClearBank" : "Citibank",
-      accountNumber: request.payInCurrency === "NGN" ? "4580016814" : request.payInCurrency === "GBP" ? "04008291" : "8840192834",
-      paymentReference: numericRef,
-    },
+    collectionAccount:
+      (isProcessingStatus && !isReservedByCurrentUser) || (isPaidStatus && !isPaidByCurrentUser)
+        ? undefined
+        : {
+            accountName: `PWA - MITO-${request.requesterName.toUpperCase()}`,
+            bankName: request.payInCurrency === "NGN" ? "Fidelity" : request.payInCurrency === "GBP" ? "ClearBank" : "Citibank",
+            accountNumber: request.payInCurrency === "NGN" ? "4580016814" : request.payInCurrency === "GBP" ? "04008291" : "8840192834",
+            paymentReference: numericRef,
+          },
     activeSessionId: currentUserId && !sessionExpired ? request.activeSessionId : null,
     sessionExpiresAt: currentUserId && !sessionExpired && request.sessionExpiresAt ? request.sessionExpiresAt.toISOString() : null,
-    isReservedByOther: ["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request.status)
-      && !!request.payerUserId && request.payerUserId !== currentUserId,
+    isReservedByOther: isProcessingStatus && !isReservedByCurrentUser,
+    isPaidByCurrentUser,
   };
 }
 
@@ -1019,7 +1091,7 @@ export async function startPayerSession(params: {
 
   const status = effectiveStatus(request);
   if (status === "paid_out" || status === "funded" || status === "payout_pending") {
-    throw new RequestError(409, "ALREADY_PAID", "This payment request has already been paid.");
+    throw new RequestError(409, "ALREADY_PAID", ALREADY_PAID_MESSAGE);
   }
   if (status === "cancelled") {
     throw new RequestError(409, "CANCELLED", "This payment request was cancelled by the requester.");
@@ -1029,7 +1101,7 @@ export async function startPayerSession(params: {
     throw new RequestError(410, "EXPIRED", "This payment request has expired.");
   }
   if (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(status)) {
-    throw new RequestError(409, "PAYMENT_IN_PROGRESS", "A payment is currently being processed for this request.");
+    throw new RequestError(409, "PAYMENT_IN_PROGRESS", PAYMENT_IN_PROGRESS_MESSAGE);
   }
 
   // Validate Payer account & KYC
@@ -1110,7 +1182,7 @@ export async function createPayinIntent(params: {
 
   const status = effectiveStatus(request);
   if (status === "paid_out" || status === "funded" || status === "payout_pending") {
-    throw new RequestError(409, "ALREADY_PAID", "This request has already been paid.");
+    throw new RequestError(409, "ALREADY_PAID", ALREADY_PAID_MESSAGE);
   }
   if (status === "cancelled") {
     throw new RequestError(409, "CANCELLED", "This request was cancelled by the requester.");
@@ -1120,7 +1192,7 @@ export async function createPayinIntent(params: {
     throw new RequestError(410, "EXPIRED", "This request has expired.");
   }
   if (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(status)) {
-    throw new RequestError(409, "PAYMENT_IN_PROGRESS", "A payment for this request is already in progress.");
+    throw new RequestError(409, "PAYMENT_IN_PROGRESS", PAYMENT_IN_PROGRESS_MESSAGE);
   }
 
   const corridor = findCorridor(request.corridorId);
@@ -1160,7 +1232,12 @@ export async function createPayinIntent(params: {
     payerEmailMasked: maskEmail(payerEmail),
   });
   if (!reserved) {
-    throw new RequestError(409, "PAYMENT_IN_PROGRESS", "Another payment is already being processed.");
+    const latest = await storage.getMoneyRequestById(request.id);
+    const latestStatus = latest ? effectiveStatus(latest) : status;
+    if (latestStatus === "paid_out" || latestStatus === "funded" || latestStatus === "payout_pending") {
+      throw new RequestError(409, "ALREADY_PAID", ALREADY_PAID_MESSAGE);
+    }
+    throw new RequestError(409, "PAYMENT_IN_PROGRESS", PAYMENT_IN_PROGRESS_MESSAGE);
   }
 
   let intent;
@@ -1204,6 +1281,87 @@ export async function createPayinIntent(params: {
     paymentReference,
     requestNumber: request.requestNumber,
   };
+}
+
+/**
+ * Releases an un-settled pay-in reservation when the reserving payer backs out of
+ * hosted/card authorisation or explicitly cancels before completing payment, so
+ * another payer (or the same payer with another method) is not permanently blocked.
+ */
+export async function releasePayinIntent(params: {
+  token: string;
+  isEmailLink?: boolean;
+  userId: string;
+  intentId?: string | null;
+}): Promise<{ released: boolean; sessionId: string | null }> {
+  const { token, isEmailLink = false, userId, intentId } = params;
+  const request = await getRequestByTokenOrEmailToken(token, isEmailLink);
+  if (!request) throw new RequestError(404, "NOT_FOUND", "This payment link is not valid.");
+
+  if (
+    !["authorisation_in_progress", "payment_processing"].includes(request.status)
+    || request.payerUserId !== userId
+    || (intentId && request.payinIntentId && request.payinIntentId !== intentId)
+  ) {
+    return { released: false, sessionId: null };
+  }
+
+  const now = new Date();
+  const previousAttempt = request.reservedAttemptId
+    ? await storage.getPaymentAttemptById(request.reservedAttemptId)
+    : undefined;
+
+  const nextStatus = now.getTime() >= request.expiresAt.getTime() ? "expired" : "viewed";
+  const released = await storage.compareAndUpdateMoneyRequest(
+    request.id,
+    ["authorisation_in_progress", "payment_processing"],
+    {
+      status: nextStatus,
+      paymentInitiatedAt: null,
+      payinIntentId: null,
+      paymentMethod: null,
+      reservedAttemptId: null,
+      payerUserId: null,
+      payerName: null,
+      payerEmail: null,
+      payerEmailMasked: null,
+    },
+  );
+  if (!released) {
+    return { released: false, sessionId: null };
+  }
+
+  if (previousAttempt) {
+    await storage.updatePaymentAttempt(previousAttempt.id, {
+      status: "provider_cancelled",
+      failureReason: "Cancelled by payer before authorisation.",
+      completedAt: now,
+    });
+  }
+
+  if (
+    nextStatus === "viewed"
+    && previousAttempt
+    && previousAttempt.sessionExpiresAt
+    && previousAttempt.sessionExpiresAt.getTime() > now.getTime()
+  ) {
+    const newSessionId = randomUUID();
+    await storage.addPaymentAttempt({
+      ...previousAttempt,
+      id: newSessionId,
+      paymentMethod: "pending",
+      status: "session_open",
+      paymentReference: `PAY-${request.requestNumber}-${randomBytes(3).toString("hex").toUpperCase()}`,
+      providerIntentId: null,
+      providerPaymentRef: null,
+      failureReason: null,
+      authorisationStartedAt: null,
+      completedAt: null,
+    });
+    return { released: true, sessionId: newSessionId };
+  }
+
+  return { released: true, sessionId: null };
 }
 
 // ─── Request New Link for Expired Requests ────────────────────────────────────
@@ -1324,19 +1482,39 @@ export async function processPayinWebhook(rawBody: Buffer, signature: string): P
     }
     if (!["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request.status)) return { accepted: true };
 
+    const fundedAt = new Date();
+    const funded = await storage.compareAndUpdateMoneyRequest(
+      request.id,
+      ["authorisation_in_progress", "payment_processing", "payment_pending"],
+      {
+        status: "funded",
+        fundedAt,
+        providerPaymentRef: event.providerPaymentRef,
+      },
+    );
+    if (!funded) return { accepted: true };
+
     if (request.reservedAttemptId) {
       await storage.updatePaymentAttempt(request.reservedAttemptId, {
         status: "successful",
         providerPaymentRef: event.providerPaymentRef,
-        completedAt: new Date(),
+        completedAt: fundedAt,
       });
     }
 
-    await storage.updateMoneyRequest(request.id, {
-      status: "funded",
-      fundedAt: new Date(),
-      providerPaymentRef: event.providerPaymentRef,
-    });
+    // Close any other concurrent open payer sessions so only one full payment is ever valid.
+    const otherAttempts = await storage.listPaymentAttempts(request.id);
+    await Promise.all(
+      otherAttempts
+        .filter((attempt) => attempt.id !== request.reservedAttemptId && attempt.status === "session_open")
+        .map((attempt) =>
+          storage.updatePaymentAttempt(attempt.id, {
+            status: "session_expired",
+            failureReason: "Request was already paid by another payer.",
+            completedAt: fundedAt,
+          }),
+        ),
+    );
     await postFundingEntries(request, event.providerPaymentRef);
     const requester = await storage.getAuthUserById(request.requesterId);
     if (request.payerEmail) {
@@ -1620,8 +1798,9 @@ async function materializeExpiry(request: MoneyRequest): Promise<void> {
 
 async function sweepOnce(): Promise<void> {
   const now = new Date();
-  for (const request of await storage.listAllMoneyRequestsRaw()) {
+  for (const rawRequest of await storage.listAllMoneyRequestsRaw()) {
     try {
+      const request = await releaseExpiredReservationIfNeeded(rawRequest, now);
       if (now.getTime() >= request.expiresAt.getTime()) {
         await materializeExpiry(request);
       }
@@ -1629,7 +1808,7 @@ async function sweepOnce(): Promise<void> {
       // reconciliation supplies a definitive result. Browser/session expiry is
       // never treated as a financial failure.
     } catch (err) {
-      console.error(`[requestService] sweep failed for ${request.id}:`, err);
+      console.error(`[requestService] sweep failed for ${rawRequest.id}:`, err);
     }
   }
 }

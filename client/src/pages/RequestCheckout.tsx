@@ -72,6 +72,7 @@ import {
   continueFromEmailLink,
   savePayerBankAccount,
   createIntent,
+  releaseIntent,
   devAuthorizeIntent,
   requestNewLink,
   METHOD_LABELS,
@@ -218,9 +219,13 @@ export default function RequestCheckout() {
     queryFn: () => getPublicRequest(token!, isEmailLink),
     refetchInterval: (query) => {
       const s = query.state.data?.status;
-      return ["authorisation_in_progress", "payment_processing", "payment_pending", "funded", "payout_pending"].includes(s ?? "")
-        ? 1500
-        : false;
+      if (["authorisation_in_progress", "payment_processing", "payment_pending", "funded", "payout_pending"].includes(s ?? "")) {
+        return 1500;
+      }
+      if (["active", "viewed"].includes(s ?? "")) {
+        return 2500;
+      }
+      return false;
     },
     retry: false,
   });
@@ -312,21 +317,28 @@ export default function RequestCheckout() {
     return () => clearTimeout(timer);
   }, [newBankName, newAccountNumber, payerDisplayName, regFirstName, regLastName, request?.senderName]);
 
-  // Handle session timer countdown
+  // Handle session timer countdown (releases any un-settled reservation on expiry so other payers can pay)
   useEffect(() => {
-    if (!sessionExpiresAt || step !== "session_active") return;
+    if (!sessionExpiresAt || (step !== "session_active" && step !== "authorizing")) return;
     const interval = setInterval(() => {
       const diffMs = sessionExpiresAt.getTime() - Date.now();
       const seconds = Math.max(0, Math.floor(diffMs / 1000));
       setSessionSecondsLeft(seconds);
       if (seconds <= 0) {
         clearInterval(interval);
+        if (intentId) {
+          const toRelease = intentId;
+          setIntentId(null);
+          void releaseIntent(token!, toRelease, isEmailLink)
+            .catch(() => null)
+            .finally(() => void refetch());
+        }
         setRedirectCountdown(60);
         setStep("session_expired");
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [sessionExpiresAt, step]);
+  }, [sessionExpiresAt, step, intentId, token, isEmailLink, refetch]);
 
   // Handle PIN cooldown timer
   useEffect(() => {
@@ -343,11 +355,11 @@ export default function RequestCheckout() {
     }
   }, [request?.status]);
 
-  // Auto-redirect timer on success
+  // Auto-redirect timer on success (winning payer only after submission; never while viewing bank transfer details)
   useEffect(() => {
     const shouldRedirect =
-      (request?.status === "paid_out" && step === "status")
-      || ["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request?.status ?? "")
+      (request?.status === "paid_out" && Boolean(request?.isPaidByCurrentUser) && step === "status")
+      || (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request?.status ?? "") && !request?.isReservedByOther && step === "status")
       || step === "session_expired";
     if (!shouldRedirect) return;
     const timer = setInterval(() => {
@@ -361,7 +373,7 @@ export default function RequestCheckout() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [request?.status, step, setLocation]);
+  }, [request?.status, request?.isPaidByCurrentUser, request?.isReservedByOther, step, setLocation]);
 
   if (isError) {
     return (
@@ -390,10 +402,25 @@ export default function RequestCheckout() {
 
   const symbol = CURRENCY_SYMBOLS[request.currency] ?? "";
   const terminalPaid = request.status === "paid_out" || request.status === "funded" || request.status === "payout_pending";
+  const isPaidByCurrentUser = Boolean(request.isPaidByCurrentUser);
+  const isReservedByOther = Boolean(request.isReservedByOther);
   const isExpired = request.status === "expired";
   const isCancelled = request.status === "cancelled";
   const isProcessing = ["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request.status);
   const requesterFirstName = (request.requesterName || "Requester").split(" ")[0];
+
+  const refreshOnConcurrentStateChange = async (err: any): Promise<boolean> => {
+    const code = String(err?.code ?? "");
+    const status = err?.status;
+    if (
+      (status === 409 && ["ALREADY_PAID", "PAYMENT_IN_PROGRESS", "INVALID_STATE", "CANCELLED"].includes(code))
+      || (status === 410 && code === "EXPIRED")
+    ) {
+      await refetch();
+      return true;
+    }
+    return false;
+  };
 
   const copyValue = async (key: string, value: string, label: string) => {
     try {
@@ -457,6 +484,9 @@ export default function RequestCheckout() {
         setStep("session_active");
       }, 320);
     } catch (err: any) {
+      if (await refreshOnConcurrentStateChange(err)) {
+        return;
+      }
       if (err?.code === "KYC_PENDING") {
         setComplianceNotice(
           "Your identity verification is currently being reviewed by our compliance team. A secure link has been saved to your account to complete payment once approved.",
@@ -527,6 +557,9 @@ export default function RequestCheckout() {
           }
           setEmailKnownStatus(false);
         } catch (err: any) {
+          if (await refreshOnConcurrentStateChange(err)) {
+            return;
+          }
           setErrorMessage(err?.message || "Could not start payment session.");
         } finally {
           setBusy(false);
@@ -571,7 +604,9 @@ export default function RequestCheckout() {
       });
       await handleStartPayerFlow(res.savedAccounts, res.payerName);
     } catch (err: any) {
-      setErrorMessage(err?.message || "Could not start payment session.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err?.message || "Could not start payment session.");
+      }
       setBusy(false);
     }
   };
@@ -607,7 +642,9 @@ export default function RequestCheckout() {
       setShowCodeBanner(true);
       setVerifyStage("code_sent");
     } catch (err: any) {
-      setErrorMessage(err?.message || "Could not send confirmation code. Please try again.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err?.message || "Could not send confirmation code. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -625,7 +662,9 @@ export default function RequestCheckout() {
       setDevPin(result.devPin ?? "");
       setShowCodeBanner(true);
     } catch (err: any) {
-      setErrorMessage(err?.message || "Failed to resend code. Please try again.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err?.message || "Failed to resend code. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -667,7 +706,9 @@ export default function RequestCheckout() {
       });
       await handleStartPayerFlow(verified.savedAccounts, verified.payerName);
     } catch (err: any) {
-      setErrorMessage(err?.message || "The confirmation code could not be verified.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err?.message || "The confirmation code could not be verified.");
+      }
       setBusy(false);
     }
   };
@@ -677,10 +718,29 @@ export default function RequestCheckout() {
   const handleContinueFromMethodSelect = async () => {
     setErrorMessage("");
     if (selectedMethod === "bank_transfer") {
+      setBusy(true);
       setPaymentSubStep("loading_transfer");
-      setTimeout(() => {
+      try {
+        let currentIntentId = intentId;
+        if (!currentIntentId) {
+          if (!activeSessionId) throw new Error("Start a new payment session to continue.");
+          const available = request.methods.length > 0 ? request.methods : (request.availableMethods ?? ["bank_transfer"]);
+          const methodToUse = available.includes("bank_transfer") ? "bank_transfer" : available[0];
+          const intent = await createIntent(token!, methodToUse, activeSessionId, isEmailLink);
+          currentIntentId = intent.intentId;
+          setIntentId(intent.intentId);
+          setPaymentReference(intent.paymentReference);
+        }
+        await refetch();
         setPaymentSubStep("bank_transfer_details");
-      }, 450);
+      } catch (err: any) {
+        setPaymentSubStep("method_select");
+        if (!(await refreshOnConcurrentStateChange(err))) {
+          setErrorMessage(err instanceof Error ? err.message : "Failed to initiate bank transfer.");
+        }
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -694,10 +754,30 @@ export default function RequestCheckout() {
       setStep("authorizing");
       await refetch();
     } catch (err: any) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to initiate payment.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err instanceof Error ? err.message : "Failed to initiate payment.");
+      }
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleReleaseAndBackToMethods = async () => {
+    if (intentId) {
+      const toRelease = intentId;
+      setIntentId(null);
+      try {
+        const res = await releaseIntent(token!, toRelease, isEmailLink);
+        if (res.sessionId) {
+          setActiveSessionId(res.sessionId);
+        }
+      } catch {
+        /* ignore best-effort release error */
+      }
+      await refetch();
+    }
+    setErrorMessage("");
+    setPaymentSubStep("method_select");
   };
 
   const handleIveSentTheMoney = async () => {
@@ -719,7 +799,9 @@ export default function RequestCheckout() {
       setStep("status");
       await refetch();
     } catch (err: any) {
-      setErrorMessage(err instanceof Error ? err.message : "Could not confirm transfer. Please try again.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err instanceof Error ? err.message : "Could not confirm transfer. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -763,7 +845,9 @@ export default function RequestCheckout() {
       setNewAccountNumber("");
       setPaymentSubStep("bank_transfer_details");
     } catch (err: any) {
-      setErrorMessage(err?.message || "Could not save bank account.");
+      if (!(await refreshOnConcurrentStateChange(err))) {
+        setErrorMessage(err?.message || "Could not save bank account.");
+      }
     } finally {
       setBusy(false);
     }
@@ -811,7 +895,20 @@ export default function RequestCheckout() {
     setErrorMessage("");
   };
 
-  const handleConfirmCancelPayment = () => {
+  const handleConfirmCancelPayment = async () => {
+    if (intentId) {
+      const toRelease = intentId;
+      setIntentId(null);
+      try {
+        const res = await releaseIntent(token!, toRelease, isEmailLink);
+        if (res.sessionId) {
+          setActiveSessionId(res.sessionId);
+        }
+      } catch {
+        /* ignore best-effort release error */
+      }
+      await refetch();
+    }
     setPaymentSubStep("cancel_done");
   };
 
@@ -841,7 +938,12 @@ export default function RequestCheckout() {
     );
   }
 
-  if (step === "status" || terminalPaid || isExpired || isCancelled || (isProcessing && step !== "authorizing")) {
+  const isActivelyCompletingReservedFlow =
+    !isReservedByOther
+    && Boolean(intentId)
+    && (step === "authorizing" || step === "session_active");
+
+  if (step === "status" || terminalPaid || isExpired || isCancelled || (isProcessing && !isActivelyCompletingReservedFlow)) {
     if (isExpired) {
       return (
         <Shell>
@@ -900,6 +1002,51 @@ export default function RequestCheckout() {
       );
     }
 
+    if (terminalPaid && !isPaidByCurrentUser) {
+      return (
+        <Shell>
+          <StatusCard
+            icon={<Lock className="w-8 h-8 text-amber-600" />}
+            title="Payment Request No Longer Valid"
+            testId="already-paid-card"
+          >
+            <div
+              className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-left space-y-1.5"
+              data-testid="already-paid-notice"
+            >
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                Payment Already Complete
+              </p>
+              <p className="text-sm text-amber-950 leading-relaxed">
+                This payment request is no longer valid because the payment is already complete (paid by someone else). There can only be one full payment for the requested amount.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border divide-y divide-border text-xs">
+              <Row label="Request Number" value={request.requestNumber} />
+              <Row label="Requested by" value={request.requesterName} />
+              <Row label="Requested Amount" value={`${symbol}${request.amount} ${request.currency}`} />
+              <Row label="Status" value="Already Paid (Closed)" />
+            </div>
+
+            <p className="text-xs text-slate-600 text-center leading-relaxed">
+              Please do not send any payment for this request. If you still need to pay{" "}
+              <strong>{request.requesterName}</strong>, ask them to send you a new payment request.
+            </p>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setLocation("/")}
+              data-testid="button-already-paid-home"
+            >
+              Back to Home
+            </Button>
+          </StatusCard>
+        </Shell>
+      );
+    }
+
     if (request.status === "paid_out") {
       return (
         <Shell>
@@ -934,6 +1081,45 @@ export default function RequestCheckout() {
               data-testid="button-go-home-now"
             >
               Go to Dashboard Now
+            </Button>
+          </StatusCard>
+        </Shell>
+      );
+    }
+
+    if (isProcessing && isReservedByOther) {
+      return (
+        <Shell>
+          <StatusCard
+            icon={<Loader2 className="w-8 h-8 animate-spin text-amber-600" />}
+            title="Payment Currently in Progress"
+            testId="payment-in-progress-other-card"
+          >
+            <div
+              className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-left space-y-1.5"
+              data-testid="payment-in-progress-other-notice"
+            >
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                Another Payer Is Completing Payment
+              </p>
+              <p className="text-sm text-amber-950 leading-relaxed">
+                Another payer is currently completing the payment for this request. Only one full payment can be made for this amount — please do not submit a duplicate payment.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border divide-y divide-border text-xs">
+              <Row label="Request Number" value={request.requestNumber} />
+              <Row label="Requested by" value={request.requesterName} />
+              <Row label="Amount" value={`${symbol}${request.amount} ${request.currency}`} />
+              <Row label="Status" value="Payment in Progress" />
+            </div>
+
+            <p className="text-xs text-center text-muted-foreground">
+              This page updates automatically as soon as their payment completes or if it is cancelled.
+            </p>
+
+            <Button variant="outline" className="w-full" onClick={() => setLocation("/")}>
+              Back to Home
             </Button>
           </StatusCard>
         </Shell>
@@ -1022,10 +1208,20 @@ export default function RequestCheckout() {
               variant="outline"
               className="flex-1"
               disabled={busy}
-              onClick={() => {
+              onClick={async () => {
+                const toRelease = intentId;
+                setIntentId(null);
+                try {
+                  const res = await releaseIntent(token!, toRelease, isEmailLink);
+                  if (res.sessionId) {
+                    setActiveSessionId(res.sessionId);
+                  }
+                } catch {
+                  /* ignore best-effort release error */
+                }
+                await refetch();
                 setStep("session_active");
                 setPaymentSubStep("method_select");
-                setIntentId(null);
               }}
             >
               Back
@@ -1300,7 +1496,7 @@ export default function RequestCheckout() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentSubStep("method_select")}
+                      onClick={() => void handleReleaseAndBackToMethods()}
                       className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 shrink-0"
                       aria-label="Back"
                     >
@@ -1334,7 +1530,7 @@ export default function RequestCheckout() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentSubStep("method_select")}
+                      onClick={() => void handleReleaseAndBackToMethods()}
                       className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 shrink-0"
                       aria-label="Back"
                       data-testid="button-back-to-methods"

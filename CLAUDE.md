@@ -35,6 +35,7 @@ Additional features: receiving/requesting payments, GroupPay funding campaigns, 
 - Always plan before coding and get approval of what you are implementing if it is a suggestion.
 - I can share images/screenshots but before implementing them blindly mind the theme/colour and logic/flow for Fintech/money transfer.
 - Mind the functionality and effects across the application when we are implementing something new (a field/flow or Text) so that we don't break the flow/functionality while adding or changing anything.
+- In all forms, always keep mandatory fields on top above optional fields (keeping postal Address Line 2 grouped directly under Address Line 1).
 
 ## UX-First Rule (Mandatory — No Exceptions)
 

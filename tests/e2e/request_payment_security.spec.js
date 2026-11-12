@@ -129,4 +129,121 @@ test.describe('Request Payment security and concurrency', () => {
     await payerB.dispose();
     await owner.dispose();
   });
+
+  test('bank_transfer reservation hides wire details from other payers, supports release-intent, and blocks all non-winners once paid', async () => {
+    const owner = await apiRequest.newContext({ baseURL });
+    await registerActive(owner, 'Owner');
+    const created = await createPaymentRequest(owner);
+    const token = created.checkoutUrl.split('/pay/')[1];
+    const emailToken = (created.emailCheckoutUrl ?? created.request.emailCheckoutUrl).split('/pay/e/')[1];
+
+    const payerA = await apiRequest.newContext({ baseURL });
+    const payerB = await apiRequest.newContext({ baseURL });
+    const anonymous = await apiRequest.newContext({ baseURL });
+    await anonymous.post('/api/auth/logout', { data: {} });
+    await registerActive(payerA, 'Alice');
+    await registerActive(payerB, 'Bob');
+
+    const sessionARes = await payerA.post(`/api/public/requests/${token}/session`, { data: {} });
+    const sessionBRes = await payerB.post(`/api/public/requests/${token}/session`, { data: {} });
+    expect(sessionARes.ok()).toBeTruthy();
+    expect(sessionBRes.ok()).toBeTruthy();
+    const sessionA = (await sessionARes.json()).data.sessionId;
+    const sessionB = (await sessionBRes.json()).data.sessionId;
+
+    // Payer A locks Bank Transfer immediately when opening transfer details
+    const intentARes = await payerA.post(`/api/public/requests/${token}/pay-intent`, {
+      data: { method: 'bank_transfer', sessionId: sessionA },
+    });
+    expect(intentARes.status()).toBe(200);
+    const intentA = (await intentARes.json()).data.intentId;
+
+    // Payer A sees collectionAccount and isReservedByOther === false
+    const viewA = (await (await payerA.get(`/api/public/requests/${token}`)).json()).data;
+    expect(viewA.isReservedByOther).toBe(false);
+    expect(viewA.collectionAccount).toBeTruthy();
+
+    // Payer B and anonymous see isReservedByOther === true and NEVER receive collectionAccount wire details
+    const viewB = (await (await payerB.get(`/api/public/requests/${token}`)).json()).data;
+    expect(viewB.isReservedByOther).toBe(true);
+    expect(viewB.collectionAccount).toBeUndefined();
+
+    const viewAnon = (await (await anonymous.get(`/api/public/requests/${token}`)).json()).data;
+    expect(viewAnon.isReservedByOther).toBe(true);
+    expect(viewAnon.collectionAccount).toBeUndefined();
+
+    // Payer B cannot reserve or send verification PIN while locked by Payer A
+    const blockedIntentB = await payerB.post(`/api/public/requests/${token}/pay-intent`, {
+      data: { method: 'bank_transfer', sessionId: sessionB },
+    });
+    expect(blockedIntentB.status()).toBe(409);
+    expect((await blockedIntentB.json()).error?.code).toBe('PAYMENT_IN_PROGRESS');
+
+    const blockedPin = await anonymous.post('/api/public/request-verifications/send', {
+      data: { token, email: `late-${unique()}@example.com`, isEmailLink: false },
+    });
+    expect(blockedPin.status()).toBe(409);
+    expect((await blockedPin.json()).error?.code).toBe('PAYMENT_IN_PROGRESS');
+
+    // Payer B cannot release Payer A's reservation
+    const wrongRelease = await payerB.post(`/api/public/requests/${token}/release-intent`, {
+      data: { intentId: intentA },
+    });
+    expect(wrongRelease.ok()).toBeTruthy();
+    expect((await wrongRelease.json()).data.released).toBe(false);
+    expect((await (await payerB.get(`/api/public/requests/${token}`)).json()).data.isReservedByOther).toBe(true);
+
+    // Payer A goes Back / cancels -> releases reservation
+    const released = await payerA.post(`/api/public/requests/${token}/release-intent`, {
+      data: { intentId: intentA },
+    });
+    expect(released.ok()).toBeTruthy();
+    expect((await released.json()).data.released).toBe(true);
+
+    // Now Payer B can lock Bank Transfer and complete the single full payment
+    const intentBRes = await payerB.post(`/api/public/requests/${token}/pay-intent`, {
+      data: { method: 'bank_transfer', sessionId: sessionB },
+    });
+    expect(intentBRes.status()).toBe(200);
+    const intentB = (await intentBRes.json()).data.intentId;
+
+    const authorized = await payerB.post(`/api/dev/payin/${intentB}/authorize`, { data: {} });
+    expect(authorized.ok()).toBeTruthy();
+
+    // Poll briefly until auto-settlement reaches paid_out (~3s dev payout timer)
+    let finalViewB = null;
+    for (let i = 0; i < 35; i++) {
+      finalViewB = (await (await payerB.get(`/api/public/requests/${token}`)).json()).data;
+      if (finalViewB.status === 'paid_out') break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(finalViewB.status).toBe('paid_out');
+    expect(finalViewB.isPaidByCurrentUser).toBe(true);
+
+    // Non-winning Payer A, anonymous share link, and email link all report isPaidByCurrentUser === false and hide wire details
+    const finalViewA = (await (await payerA.get(`/api/public/requests/${token}`)).json()).data;
+    expect(finalViewA.status).toBe('paid_out');
+    expect(finalViewA.isPaidByCurrentUser).toBe(false);
+    expect(finalViewA.collectionAccount).toBeUndefined();
+
+    const finalEmailView = (await (await anonymous.get(`/api/public/requests/e/${emailToken}`)).json()).data;
+    expect(finalEmailView.status).toBe('paid_out');
+    expect(finalEmailView.isPaidByCurrentUser).toBe(false);
+
+    // Any subsequent session / PIN / pay-intent attempt returns 409 ALREADY_PAID
+    const postPaidSession = await payerA.post(`/api/public/requests/${token}/session`, { data: {} });
+    expect(postPaidSession.status()).toBe(409);
+    expect((await postPaidSession.json()).error?.code).toBe('ALREADY_PAID');
+
+    const postPaidPin = await anonymous.post('/api/public/request-verifications/send', {
+      data: { token, email: `after-paid-${unique()}@example.com`, isEmailLink: false },
+    });
+    expect(postPaidPin.status()).toBe(409);
+    expect((await postPaidPin.json()).error?.code).toBe('ALREADY_PAID');
+
+    await anonymous.dispose();
+    await payerA.dispose();
+    await payerB.dispose();
+    await owner.dispose();
+  });
 });
