@@ -853,4 +853,95 @@ test.describe('Request Money E2E', () => {
     expect(refBox.y).toBeLessThan(payerDetailsBox.y);
   });
 
+  test('Concurrent payers (Window A & Window B): Bank Transfer locks immediately, releases on Back, and invalidates link once paid', async ({ browser, request }) => {
+    test.setTimeout(60000);
+    const requester = await registerAndActivate(request, 'GB');
+    const created = await createRequestViaApi(request, requester, {
+      senderName: '',
+      senderEmail: '',
+    });
+    const token = created.checkoutUrl.split('/pay/')[1];
+    const emailToken = (created.emailCheckoutUrl ?? created.request.emailCheckoutUrl).split('/pay/e/')[1];
+
+    const contextA = await browser.newContext();
+    const contextB = await browser.newContext();
+    const contextC = await browser.newContext();
+
+    try {
+      const payerA = await registerAndActivate(contextA.request, 'GB');
+      const payerB = await registerAndActivate(contextB.request, 'GB');
+
+      const pageA = await contextA.newPage();
+      const pageB = await contextB.newPage();
+      await pageA.setViewportSize({ width: 375, height: 720 });
+      await pageB.setViewportSize({ width: 375, height: 720 });
+
+      // Both Payer A and Payer B open the shared Receive Money link simultaneously and verify email PIN
+      await Promise.all([
+        pageA.goto(`/pay/${token}`),
+        pageB.goto(`/pay/${token}`),
+      ]);
+
+      for (const [p, creds] of [[pageA, payerA], [pageB, payerB]]) {
+        await p.getByTestId('button-start-pay').click();
+        await p.getByTestId('input-payer-email').fill(creds.email);
+        await p.getByTestId('button-check-email').click();
+        await expect(p.getByTestId('input-pin-code')).toBeVisible({ timeout: 10000 });
+        await p.getByTestId('button-fill-dev-pin').click();
+        await p.getByTestId('button-verify-pin-pay').click();
+        await expect(p.getByTestId('screen-method-select')).toBeVisible({ timeout: 10000 });
+      }
+
+      // Window A selects Bank Transfer -> Continue -> locks immediately on screen-bank-transfer-details
+      await pageA.getByTestId('button-method-bank_transfer').click();
+      await pageA.getByTestId('button-pay-now').click();
+      await expect(pageA.getByTestId('screen-bank-transfer-details')).toBeVisible({ timeout: 10000 });
+
+      // Window B automatically transitions (via live polling) to "Payment Currently in Progress" and never sees bank account details
+      await expect(pageB.getByTestId('payment-in-progress-other-card')).toBeVisible({ timeout: 10000 });
+      await expect(pageB.getByText('Payment Currently in Progress')).toBeVisible();
+      await expect(pageB.getByTestId('screen-bank-transfer-details')).toHaveCount(0);
+
+      // Window A clicks Back -> releases the lock -> Window B automatically recovers back to method selection
+      await pageA.getByTestId('button-back-to-methods').click();
+      await expect(pageA.getByTestId('screen-method-select')).toBeVisible({ timeout: 10000 });
+      await expect(pageB.getByTestId('screen-method-select')).toBeVisible({ timeout: 10000 });
+
+      // Now Window B selects Bank Transfer -> Continue -> locks immediately, blocking Window A
+      await pageB.getByTestId('button-method-bank_transfer').click();
+      await pageB.getByTestId('button-pay-now').click();
+      await expect(pageB.getByTestId('screen-bank-transfer-details')).toBeVisible({ timeout: 10000 });
+      await expect(pageA.getByTestId('payment-in-progress-other-card')).toBeVisible({ timeout: 10000 });
+
+      // Window B completes the single full payment ("I've sent the money")
+      await pageB.getByTestId('button-ive-sent-money').click();
+      await expect(pageB.getByTestId('success-card')).toBeVisible({ timeout: 30000 });
+      await expect(pageB.getByText('Payment Successful!')).toBeVisible();
+
+      // Window A automatically flips to "Payment Request No Longer Valid" (paid by someone else)
+      await expect(pageA.getByTestId('already-paid-card')).toBeVisible({ timeout: 15000 });
+      await expect(pageA.getByText('Payment Request No Longer Valid')).toBeVisible();
+      await expect(pageA.getByTestId('already-paid-notice')).toContainText('paid by someone else');
+      await expect(pageA.getByTestId('already-paid-notice')).toContainText('one full payment');
+      await expect(pageA.getByTestId('success-card')).toHaveCount(0);
+
+      // Winning Payer B reloading the link still sees their own "Payment Successful!" receipt
+      await pageB.reload();
+      await expect(pageB.getByTestId('success-card')).toBeVisible({ timeout: 10000 });
+
+      // Any third visitor (Window C) opening either the share link or email link sees "Payment Request No Longer Valid"
+      const pageC = await contextC.newPage();
+      await pageC.goto(`/pay/${token}`);
+      await expect(pageC.getByTestId('already-paid-card')).toBeVisible({ timeout: 10000 });
+      await expect(pageC.getByTestId('mito-summary-card')).toHaveCount(0);
+
+      await pageC.goto(`/pay/e/${emailToken}`);
+      await expect(pageC.getByTestId('already-paid-card')).toBeVisible({ timeout: 10000 });
+    } finally {
+      await contextA.close();
+      await contextB.close();
+      await contextC.close();
+    }
+  });
+
 });
