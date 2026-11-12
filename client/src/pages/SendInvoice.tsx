@@ -1317,56 +1317,6 @@ export default function SendInvoice() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="recipientPhone">Recipient Phone (Optional)</Label>
-                  <div className="flex gap-2">
-                    <Select
-                      value={formData.countryCode}
-                      onValueChange={(value) => handleInputChange("countryCode", value)}
-                    >
-                      <SelectTrigger className="w-28 sm:w-36 shrink-0" data-testid="select-country-code">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-72">
-                        {DIALING_CODES.map((country) => (
-                          <SelectItem key={country.value} value={country.value}>
-                            {country.flag} {country.code} {country.country}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      id="recipientPhone"
-                      type="tel"
-                      placeholder="Mobile number"
-                      value={formData.recipientPhone}
-                      onChange={(e) => handleInputChange("recipientPhone", e.target.value)}
-                      className="flex-1"
-                      data-testid="input-recipient-phone"
-                    />
-                  </div>
-                </div>
-
-                {/* Due Date */}
-                <div className="space-y-2">
-                  <Label htmlFor="dueDate">Due Date (Optional)</Label>
-                  <Input
-                    id="dueDate"
-                    type="date"
-                    min={today}
-                    value={formData.dueDate}
-                    onChange={(e) => handleDueDateChange(e.target.value)}
-                    data-testid="input-due-date"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The date by which you expect the client to make payment. Payment may still be made after this
-                    date until the payment link expires.
-                  </p>
-                  {dateErrors.dueDate && (
-                    <p className="text-xs text-destructive" data-testid="error-due-date">{dateErrors.dueDate}</p>
-                  )}
-                </div>
-
                 {/* Payment Link Expiry */}
                 <div className="space-y-2">
                   <Label htmlFor="expiryPeriod">Payment Link Expiry *</Label>
@@ -1415,6 +1365,56 @@ export default function SendInvoice() {
                   )}
                   {dateErrors.expiry && (
                     <p className="text-xs text-destructive" data-testid="error-expiry">{dateErrors.expiry}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="recipientPhone">Recipient Phone (Optional)</Label>
+                  <div className="flex gap-2">
+                    <Select
+                      value={formData.countryCode}
+                      onValueChange={(value) => handleInputChange("countryCode", value)}
+                    >
+                      <SelectTrigger className="w-28 sm:w-36 shrink-0" data-testid="select-country-code">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {DIALING_CODES.map((country) => (
+                          <SelectItem key={country.value} value={country.value}>
+                            {country.flag} {country.code} {country.country}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      id="recipientPhone"
+                      type="tel"
+                      placeholder="Mobile number"
+                      value={formData.recipientPhone}
+                      onChange={(e) => handleInputChange("recipientPhone", e.target.value)}
+                      className="flex-1"
+                      data-testid="input-recipient-phone"
+                    />
+                  </div>
+                </div>
+
+                {/* Due Date */}
+                <div className="space-y-2">
+                  <Label htmlFor="dueDate">Due Date (Optional)</Label>
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    min={today}
+                    value={formData.dueDate}
+                    onChange={(e) => handleDueDateChange(e.target.value)}
+                    data-testid="input-due-date"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The date by which you expect the client to make payment. Payment may still be made after this
+                    date until the payment link expires.
+                  </p>
+                  {dateErrors.dueDate && (
+                    <p className="text-xs text-destructive" data-testid="error-due-date">{dateErrors.dueDate}</p>
                   )}
                 </div>
 

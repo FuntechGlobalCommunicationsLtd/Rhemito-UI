@@ -169,7 +169,7 @@ export function InvoiceItemsBuilder({
             data-testid={`invoice-item-row-${index}`}
           >
             <div className="flex items-start gap-3">
-              <div className="flex-1 space-y-2">
+              <div className="flex-1">
                 <Input
                   placeholder="Item description (e.g. Consulting services)"
                   value={item.name}
@@ -177,14 +177,6 @@ export function InvoiceItemsBuilder({
                   className="bg-white font-medium"
                   data-testid={`input-item-name-${index}`}
                   maxLength={100}
-                />
-                <Input
-                  placeholder="Detail (optional)"
-                  value={item.description}
-                  onChange={(e) => updateItem(index, { description: e.target.value })}
-                  className="bg-white text-xs h-8"
-                  data-testid={`input-item-detail-${index}`}
-                  maxLength={500}
                 />
               </div>
               <Button
@@ -232,6 +224,16 @@ export function InvoiceItemsBuilder({
                     data-testid={`input-item-unit-${index}`}
                   />
                 </div>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Input
+                  placeholder="Detail (optional)"
+                  value={item.description}
+                  onChange={(e) => updateItem(index, { description: e.target.value })}
+                  className="bg-white text-xs h-8"
+                  data-testid={`input-item-detail-${index}`}
+                  maxLength={500}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Discount (Optional)</Label>
