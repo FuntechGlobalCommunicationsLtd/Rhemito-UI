@@ -12,11 +12,12 @@ import {
   saveReferral,
   loadReferral,
   clearReferral,
+  formatOfferAnnouncementMessage,
   REFERRAL_CODE_RE,
   type MyReferral,
   type WalletCredit,
 } from "@/lib/rewards";
-import { currencyForCountry, sendCurrenciesForCountry } from "../../../server/rewardsService";
+import { currencyForCountry, formatOfferNoticeMessage, sendCurrenciesForCountry } from "../../../server/rewardsService";
 
 const NOW = new Date("2026-10-03T10:00:00Z");
 
@@ -123,5 +124,27 @@ describe("server: country to send currency", () => {
     expect(sendCurrenciesForCountry("GB")).toEqual(["GBP", "USD", "EUR"]);
     expect(sendCurrenciesForCountry("DE")).toEqual(["EUR", "GBP", "USD"]);
     expect(sendCurrenciesForCountry("US")).toEqual(["USD", "GBP", "EUR"]);
+  });
+});
+
+describe("offer announcement formatting", () => {
+  it("formats LIVE referral announcements with corridor and both rewards", () => {
+    const raw = "Invite friends and get £5.00 each time they send £50.00 or more to USD. Your friend gets £10.00 too.";
+    const expected = "Invite friends and get £5.00 each time they sign up via your link and complete a successful transaction. Your friend gets £10.00 too on sign-up.";
+    expect(formatOfferAnnouncementMessage(raw, "LIVE")).toBe(expected);
+    expect(formatOfferNoticeMessage(raw, "LIVE")).toBe(expected);
+  });
+
+  it("formats LIVE referrer-only and referee-only announcements and preserves IMPROVED messages", () => {
+    expect(
+      formatOfferAnnouncementMessage("Invite friends and get A$5.00 each time they send A$50.00 or more to NGN.", "LIVE"),
+    ).toBe("Invite friends and get A$5.00 each time they sign up via your link and complete a successful transaction.");
+
+    expect(
+      formatOfferAnnouncementMessage("Give friends £10.00 when they join with your link and send £50.00 or more.", "LIVE"),
+    ).toBe("Give friends £10.00 on sign-up when they join via your link.");
+
+    const improved = "Better offer: you now get £8.00 for every friend who sends £50.00 or more.";
+    expect(formatOfferAnnouncementMessage(improved, "IMPROVED")).toBe(improved);
   });
 });
