@@ -1137,7 +1137,7 @@ export default function RequestPayment() {
                             data-testid="mode-less"
                           >
                             <span className={`block text-sm font-bold font-display ${formData.absorbFee ? "text-primary" : "text-slate-900"}`}>Receive amount less charges</span>
-                            <span className="block text-xs text-muted-foreground">The 3% fee comes out of what you receive.</span>
+                            <span className="block text-xs text-muted-foreground">All the fees and commission will be charged from the amount you receive.</span>
                           </button>
                         </div>
                       </div>
