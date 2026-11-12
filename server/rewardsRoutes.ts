@@ -12,6 +12,7 @@ import {
   RewardsError,
   applyBonus,
   currencyForCountry,
+  formatOfferNoticeMessage,
   sendCurrenciesForCountry,
   isOfferPollerStarted,
   mito,
@@ -231,9 +232,11 @@ export function registerRewardsRoutes(app: Express): void {
           offers: currencyOffers,
           wallet,
           referrals: { data: referralRows, summary: referralSummary },
-          latestOffer: primaryOffer && latest ? { id: latest.id, kind: latest.kind, title: latest.title, message: latest.message, currency: latest.currency, createdAt: latest.created_at } : null,
+          latestOffer: primaryOffer && latest
+            ? { id: latest.id, kind: latest.kind, title: latest.title, message: formatOfferNoticeMessage(latest.message, latest.kind), currency: latest.currency, createdAt: latest.created_at }
+            : null,
           latestOffers: primaryOffer
-            ? recentNotices.map((n) => ({ id: n.id, kind: n.kind, title: n.title, message: n.message, currency: n.currency, createdAt: n.created_at }))
+            ? recentNotices.map((n) => ({ id: n.id, kind: n.kind, title: n.title, message: formatOfferNoticeMessage(n.message, n.kind), currency: n.currency, createdAt: n.created_at }))
             : [],
         },
       });

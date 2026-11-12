@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
-import type { OfferAnnouncement, RewardsSummary } from "@/lib/rewards";
+import { formatOfferAnnouncementMessage, type OfferAnnouncement, type RewardsSummary } from "@/lib/rewards";
 
 const dismissedKey = (id: number) => `rhemito.offerDismissed.${id}`;
 
@@ -57,7 +57,9 @@ export function OfferBanner({ latestOffer, latestOffers, onView }: OfferBannerPr
                 </span>
               )}
             </div>
-            <span className="text-[15px] leading-[22px] text-slate-900">{offer.message}</span>
+            <span className="text-[15px] leading-[22px] text-slate-900">
+              {formatOfferAnnouncementMessage(offer.message, offer.kind)}
+            </span>
             <button
               type="button"
               onClick={onView}

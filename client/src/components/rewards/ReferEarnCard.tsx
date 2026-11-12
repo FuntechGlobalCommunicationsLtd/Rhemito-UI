@@ -351,7 +351,7 @@ export function ReferEarnCard({
                 You get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
               </h3>
               <p className="text-sm sm:text-base text-[#323130] leading-snug">
-                When you Invite friends and they sign up using your link
+                When you invite friends and they complete their first successful transaction after signing up using your link
               </p>
             </div>
             <div className="flex-1 rounded-lg border border-[#cfcece] bg-white p-4 flex flex-col justify-center gap-2">
@@ -359,7 +359,7 @@ export function ReferEarnCard({
                 They get {formatMoney(activeOffer.referee_reward, activeOffer.currency)}
               </h3>
               <p className="text-sm sm:text-base text-[#323130] leading-snug">
-                When they sign up with your link and make their first transaction
+                When they sign up using your link
               </p>
             </div>
             {/* Contract-pinned offer sentence with bold amounts */}

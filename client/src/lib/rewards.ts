@@ -102,6 +102,36 @@ export interface OfferAnnouncement {
   createdAt: string;
 }
 
+/**
+ * Formats the "New offer" banner copy so referral announcements match the
+ * approved Refer & Earn reward wording (referrer rewarded after first successful
+ * transaction; friend rewarded on sign-up).
+ */
+export function formatOfferAnnouncementMessage(message: string, kind?: string | null): string {
+  const raw = String(message ?? "").trim();
+  if (!raw || (kind && kind !== "LIVE")) return raw;
+
+  const inviteMatch = raw.match(
+    /^Invite friends and get (.+?) each time they send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.(?:\s*Your friend gets (.+?) too\.)?$/i,
+  );
+  if (inviteMatch) {
+    const referrerAmount = inviteMatch[1];
+    const refereeAmount = inviteMatch[2];
+    return `Invite friends and get ${referrerAmount} each time they sign up via your link and complete a successful transaction.${
+      refereeAmount ? ` Your friend gets ${refereeAmount} too on sign-up.` : ""
+    }`;
+  }
+
+  const refereeOnlyMatch = raw.match(
+    /^Give friends (.+?) when they join with your link and send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.$/i,
+  );
+  if (refereeOnlyMatch) {
+    return `Give friends ${refereeOnlyMatch[1]} on sign-up when they join via your link.`;
+  }
+
+  return raw;
+}
+
 export interface RewardsSummary {
   customer: { id: string; referralCode: string; currency: string } | null;
   currency: string;

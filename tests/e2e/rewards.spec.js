@@ -69,6 +69,8 @@ test.describe('Refer & Earn on the Dashboard', () => {
         await page.goto('/');
         const card = page.getByTestId('refer-earn-card');
         await expect(card).toBeVisible();
+        await expect(card).toContainText('When you invite friends and they complete their first successful transaction after signing up using your link');
+        await expect(card).toContainText('When they sign up using your link');
         await expect(card.getByTestId('refer-offer-text')).toContainText('You get £5.00 and your friend gets £10.00');
         await expect(card.getByLabel('Your referral link')).toHaveValue('localhost:5000/ref/JOHN2880');
         // Totals only — individual friends are listed on the Referrals tab, so the card never grows
@@ -85,6 +87,7 @@ test.describe('Refer & Earn on the Dashboard', () => {
         await page.goto('/');
         const banner = page.getByTestId('offer-banner');
         await expect(banner).toContainText('NEW OFFER');
+        await expect(banner).toContainText('Invite friends and get £5.00 each time they sign up via your link and complete a successful transaction. Your friend gets £10.00 too on sign-up.');
         await banner.getByRole('button', { name: 'Dismiss offer' }).click();
         await expect(banner).toBeHidden();
         await page.reload();
