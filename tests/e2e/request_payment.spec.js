@@ -819,4 +819,38 @@ test.describe('Request Money E2E', () => {
     await expect(page).toHaveURL(/type=receive_money/);
   });
 
+  test('Mode-less copy, removed Step 2 Edit amount bar, and mandatory fields on top', async ({ page, request }) => {
+    const user = await registerAndActivate(request);
+    const pageRequest = page.context().request;
+    await pageRequest.post('/api/auth/login', { data: { email: user.email, password: 'Passw0rd!x' } });
+    await addVerifiedAccount(pageRequest, 'GB', 'GBP');
+
+    await page.goto('/request-payment');
+
+    await expect(page.getByTestId('mode-less')).toContainText(
+      'All the fees and commission will be charged from the amount you receive.',
+    );
+
+    await page.getByTestId('input-request-amount').fill('250');
+    await page.getByTestId('button-step-next').click();
+
+    // Step 2 summary bar ("Edit amount") is removed
+    await expect(page.getByTestId('request-summary')).toHaveCount(0);
+    await expect(page.getByTestId('button-edit-amount')).toHaveCount(0);
+
+    // Mandatory / default-applied fields appear vertically above optional fields
+    const reasonBox = await page.getByTestId('select-reason').boundingBox();
+    const expiryBox = await page.getByTestId('select-expiry-period').boundingBox();
+    const emailBox = await page.getByTestId('input-sender-email').boundingBox();
+    const noteBox = await page.getByTestId('input-note').boundingBox();
+    const refBox = await page.getByTestId('input-invoice-reference').boundingBox();
+    const payerDetailsBox = await page.getByTestId('toggle-payer-details').boundingBox();
+
+    expect(reasonBox.y).toBeLessThan(expiryBox.y);
+    expect(expiryBox.y).toBeLessThan(emailBox.y);
+    expect(emailBox.y).toBeLessThan(noteBox.y);
+    expect(noteBox.y).toBeLessThan(refBox.y);
+    expect(refBox.y).toBeLessThan(payerDetailsBox.y);
+  });
+
 });

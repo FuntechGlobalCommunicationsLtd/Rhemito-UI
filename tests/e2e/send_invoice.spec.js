@@ -557,4 +557,34 @@ test.describe('Send Invoice MVP1 E2E', () => {
     await expect(page.getByRole('button', { name: /Reactivate/i })).toHaveCount(0);
   });
 
+  test('Mandatory fields appear above optional fields in Send Invoice and InvoiceItemsBuilder', async ({ page }) => {
+    const { request } = await setupSender(page);
+    await addVerifiedAccount(request);
+
+    await page.goto('/send-invoice');
+    await expect(page.getByRole('heading', { name: 'Send Invoice' })).toBeVisible();
+
+    // Generate mode (default): item mandatory fields (name, qty, unit price) sit above optional detail & discount
+    const itemNameBox = await page.getByTestId('input-item-name-0').boundingBox();
+    const itemQtyBox = await page.getByTestId('input-item-qty-0').boundingBox();
+    const itemUnitBox = await page.getByTestId('input-item-unit-0').boundingBox();
+    const itemDetailBox = await page.getByTestId('input-item-detail-0').boundingBox();
+    const itemDiscountBox = await page.getByTestId('select-item-discount-type-0').boundingBox();
+
+    expect(itemNameBox.y).toBeLessThan(itemDetailBox.y);
+    expect(itemQtyBox.y).toBeLessThan(itemDetailBox.y);
+    expect(itemUnitBox.y).toBeLessThan(itemDetailBox.y);
+    expect(itemDetailBox.y).toBeLessThan(itemDiscountBox.y);
+
+    // Recipient & dates section: mandatory Email & Payment Link Expiry sit above optional Phone & Due Date
+    const emailBox = await page.getByTestId('input-recipient-email').boundingBox();
+    const expiryBox = await page.getByTestId('select-expiry-period').boundingBox();
+    const phoneBox = await page.getByTestId('input-recipient-phone').boundingBox();
+    const dueDateBox = await page.getByTestId('input-due-date').boundingBox();
+
+    expect(emailBox.y).toBeLessThan(expiryBox.y);
+    expect(expiryBox.y).toBeLessThan(phoneBox.y);
+    expect(phoneBox.y).toBeLessThan(dueDateBox.y);
+  });
+
 });
