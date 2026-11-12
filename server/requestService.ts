@@ -886,8 +886,55 @@ async function getOwnRequest(userId: string, requestId: string): Promise<MoneyRe
   return request;
 }
 
+async function releaseExpiredReservationIfNeeded(request: MoneyRequest, now = new Date()): Promise<MoneyRequest> {
+  if (
+    !["authorisation_in_progress", "payment_processing"].includes(request.status)
+    || !request.reservedAttemptId
+  ) {
+    return request;
+  }
+  const attempt = await storage.getPaymentAttemptById(request.reservedAttemptId);
+  // Only auto-release pre-authorisation reservations ("authorisation_initiated") whose 10-minute session expired.
+  // Never auto-release attempts where a provider has already reported "pending" or "unknown".
+  if (
+    !attempt
+    || attempt.status !== "authorisation_initiated"
+    || !attempt.sessionExpiresAt
+    || now.getTime() < attempt.sessionExpiresAt.getTime()
+  ) {
+    return request;
+  }
+
+  const nextStatus = now.getTime() >= request.expiresAt.getTime() ? "expired" : "viewed";
+  const released = await storage.compareAndUpdateMoneyRequest(
+    request.id,
+    ["authorisation_in_progress", "payment_processing"],
+    {
+      status: nextStatus,
+      paymentInitiatedAt: null,
+      payinIntentId: null,
+      paymentMethod: null,
+      reservedAttemptId: null,
+      payerUserId: null,
+      payerName: null,
+      payerEmail: null,
+      payerEmailMasked: null,
+    },
+  );
+  if (!released) {
+    return (await storage.getMoneyRequestById(request.id)) ?? request;
+  }
+  await storage.updatePaymentAttempt(attempt.id, {
+    status: "session_expired",
+    failureReason: "Payment session expired before payment completion.",
+    completedAt: now,
+  });
+  return released;
+}
+
 export async function getRequestByToken(token: string): Promise<MoneyRequest | undefined> {
-  return storage.getMoneyRequestByTokenHash(hashToken(token));
+  const found = await storage.getMoneyRequestByTokenHash(hashToken(token));
+  return found ? releaseExpiredReservationIfNeeded(found) : undefined;
 }
 
 export async function getRequestByTokenOrEmailToken(
@@ -895,10 +942,10 @@ export async function getRequestByTokenOrEmailToken(
   isEmailLink = false,
 ): Promise<MoneyRequest | undefined> {
   const hash = hashToken(tokenOrEmailToken);
-  if (isEmailLink) {
-    return storage.getMoneyRequestByEmailTokenHash(hash);
-  }
-  return storage.getMoneyRequestByTokenHash(hash);
+  const found = isEmailLink
+    ? await storage.getMoneyRequestByEmailTokenHash(hash)
+    : await storage.getMoneyRequestByTokenHash(hash);
+  return found ? releaseExpiredReservationIfNeeded(found) : undefined;
 }
 
 /** Effective status incl. real-time expiry for pre-funding states. */
@@ -1003,12 +1050,15 @@ export function toPublicRequestJSON(
         ? partiallyMaskSenderAccount(requestPayerFullAccountById.get(request.id) || request.payerSourceAccountMasked || "")
         : null,
     payerSavedAccounts: savedAccounts,
-    collectionAccount: {
-      accountName: `PWA - MITO-${request.requesterName.toUpperCase()}`,
-      bankName: request.payInCurrency === "NGN" ? "Fidelity" : request.payInCurrency === "GBP" ? "ClearBank" : "Citibank",
-      accountNumber: request.payInCurrency === "NGN" ? "4580016814" : request.payInCurrency === "GBP" ? "04008291" : "8840192834",
-      paymentReference: numericRef,
-    },
+    collectionAccount:
+      (isProcessingStatus && !isReservedByCurrentUser) || (isPaidStatus && !isPaidByCurrentUser)
+        ? undefined
+        : {
+            accountName: `PWA - MITO-${request.requesterName.toUpperCase()}`,
+            bankName: request.payInCurrency === "NGN" ? "Fidelity" : request.payInCurrency === "GBP" ? "ClearBank" : "Citibank",
+            accountNumber: request.payInCurrency === "NGN" ? "4580016814" : request.payInCurrency === "GBP" ? "04008291" : "8840192834",
+            paymentReference: numericRef,
+          },
     activeSessionId: currentUserId && !sessionExpired ? request.activeSessionId : null,
     sessionExpiresAt: currentUserId && !sessionExpired && request.sessionExpiresAt ? request.sessionExpiresAt.toISOString() : null,
     isReservedByOther: isProcessingStatus && !isReservedByCurrentUser,
@@ -1748,8 +1798,9 @@ async function materializeExpiry(request: MoneyRequest): Promise<void> {
 
 async function sweepOnce(): Promise<void> {
   const now = new Date();
-  for (const request of await storage.listAllMoneyRequestsRaw()) {
+  for (const rawRequest of await storage.listAllMoneyRequestsRaw()) {
     try {
+      const request = await releaseExpiredReservationIfNeeded(rawRequest, now);
       if (now.getTime() >= request.expiresAt.getTime()) {
         await materializeExpiry(request);
       }
@@ -1757,7 +1808,7 @@ async function sweepOnce(): Promise<void> {
       // reconciliation supplies a definitive result. Browser/session expiry is
       // never treated as a financial failure.
     } catch (err) {
-      console.error(`[requestService] sweep failed for ${request.id}:`, err);
+      console.error(`[requestService] sweep failed for ${rawRequest.id}:`, err);
     }
   }
 }

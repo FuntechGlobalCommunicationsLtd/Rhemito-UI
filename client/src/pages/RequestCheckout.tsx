@@ -317,21 +317,28 @@ export default function RequestCheckout() {
     return () => clearTimeout(timer);
   }, [newBankName, newAccountNumber, payerDisplayName, regFirstName, regLastName, request?.senderName]);
 
-  // Handle session timer countdown
+  // Handle session timer countdown (releases any un-settled reservation on expiry so other payers can pay)
   useEffect(() => {
-    if (!sessionExpiresAt || step !== "session_active") return;
+    if (!sessionExpiresAt || (step !== "session_active" && step !== "authorizing")) return;
     const interval = setInterval(() => {
       const diffMs = sessionExpiresAt.getTime() - Date.now();
       const seconds = Math.max(0, Math.floor(diffMs / 1000));
       setSessionSecondsLeft(seconds);
       if (seconds <= 0) {
         clearInterval(interval);
+        if (intentId) {
+          const toRelease = intentId;
+          setIntentId(null);
+          void releaseIntent(token!, toRelease, isEmailLink)
+            .catch(() => null)
+            .finally(() => void refetch());
+        }
         setRedirectCountdown(60);
         setStep("session_expired");
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [sessionExpiresAt, step]);
+  }, [sessionExpiresAt, step, intentId, token, isEmailLink, refetch]);
 
   // Handle PIN cooldown timer
   useEffect(() => {
@@ -348,11 +355,11 @@ export default function RequestCheckout() {
     }
   }, [request?.status]);
 
-  // Auto-redirect timer on success (winning payer only; other payers keep the invalidation notice visible)
+  // Auto-redirect timer on success (winning payer only after submission; never while viewing bank transfer details)
   useEffect(() => {
     const shouldRedirect =
       (request?.status === "paid_out" && Boolean(request?.isPaidByCurrentUser) && step === "status")
-      || (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request?.status ?? "") && !request?.isReservedByOther)
+      || (["authorisation_in_progress", "payment_processing", "payment_pending"].includes(request?.status ?? "") && !request?.isReservedByOther && step === "status")
       || step === "session_expired";
     if (!shouldRedirect) return;
     const timer = setInterval(() => {
@@ -711,10 +718,29 @@ export default function RequestCheckout() {
   const handleContinueFromMethodSelect = async () => {
     setErrorMessage("");
     if (selectedMethod === "bank_transfer") {
+      setBusy(true);
       setPaymentSubStep("loading_transfer");
-      setTimeout(() => {
+      try {
+        let currentIntentId = intentId;
+        if (!currentIntentId) {
+          if (!activeSessionId) throw new Error("Start a new payment session to continue.");
+          const available = request.methods.length > 0 ? request.methods : (request.availableMethods ?? ["bank_transfer"]);
+          const methodToUse = available.includes("bank_transfer") ? "bank_transfer" : available[0];
+          const intent = await createIntent(token!, methodToUse, activeSessionId, isEmailLink);
+          currentIntentId = intent.intentId;
+          setIntentId(intent.intentId);
+          setPaymentReference(intent.paymentReference);
+        }
+        await refetch();
         setPaymentSubStep("bank_transfer_details");
-      }, 450);
+      } catch (err: any) {
+        setPaymentSubStep("method_select");
+        if (!(await refreshOnConcurrentStateChange(err))) {
+          setErrorMessage(err instanceof Error ? err.message : "Failed to initiate bank transfer.");
+        }
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -734,6 +760,24 @@ export default function RequestCheckout() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleReleaseAndBackToMethods = async () => {
+    if (intentId) {
+      const toRelease = intentId;
+      setIntentId(null);
+      try {
+        const res = await releaseIntent(token!, toRelease, isEmailLink);
+        if (res.sessionId) {
+          setActiveSessionId(res.sessionId);
+        }
+      } catch {
+        /* ignore best-effort release error */
+      }
+      await refetch();
+    }
+    setErrorMessage("");
+    setPaymentSubStep("method_select");
   };
 
   const handleIveSentTheMoney = async () => {
@@ -856,7 +900,10 @@ export default function RequestCheckout() {
       const toRelease = intentId;
       setIntentId(null);
       try {
-        await releaseIntent(token!, toRelease, isEmailLink);
+        const res = await releaseIntent(token!, toRelease, isEmailLink);
+        if (res.sessionId) {
+          setActiveSessionId(res.sessionId);
+        }
       } catch {
         /* ignore best-effort release error */
       }
@@ -891,7 +938,12 @@ export default function RequestCheckout() {
     );
   }
 
-  if (step === "status" || terminalPaid || isExpired || isCancelled || (isProcessing && step !== "authorizing")) {
+  const isActivelyCompletingReservedFlow =
+    !isReservedByOther
+    && Boolean(intentId)
+    && (step === "authorizing" || step === "session_active");
+
+  if (step === "status" || terminalPaid || isExpired || isCancelled || (isProcessing && !isActivelyCompletingReservedFlow)) {
     if (isExpired) {
       return (
         <Shell>
@@ -1444,7 +1496,7 @@ export default function RequestCheckout() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentSubStep("method_select")}
+                      onClick={() => void handleReleaseAndBackToMethods()}
                       className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 shrink-0"
                       aria-label="Back"
                     >
@@ -1478,7 +1530,7 @@ export default function RequestCheckout() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentSubStep("method_select")}
+                      onClick={() => void handleReleaseAndBackToMethods()}
                       className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 shrink-0"
                       aria-label="Back"
                       data-testid="button-back-to-methods"
