@@ -119,15 +119,18 @@ test.describe('Request Money E2E', () => {
     await addVerifiedAccount(pageRequest, 'GB', 'GBP');
     await page.goto('/request-payment');
 
-    // Step 1: labels, minimum and breakdown
+    // Step 1: labels, minimum and Amount Summary sidebar
     await expect(page.getByText('Mandatory').first()).toBeVisible();
     await page.getByTestId('input-request-amount').fill('250');
-    await expect(page.getByText('Payment breakdown').first()).toBeVisible();
-    await expect(page.getByText('You receive in bank (GBP)')).toBeVisible();
+    await expect(page.getByTestId('fee-breakdown').getByText('Amount Summary')).toBeVisible();
+    await expect(page.getByTestId('fee-breakdown').getByText('Total You Receive')).toBeVisible();
+    await expect(page.getByTestId('fee-breakdown').getByText('Settlement Account Details')).toBeVisible();
     await expect(page.getByTestId('text-minimum')).toContainText('Minimum the payer can send');
     await page.getByTestId('button-step-next').click();
 
-    // Step 2: only the purpose is mandatory; Send email is hidden without a payer email
+    // Step 2: Amount Summary sidebar carries over; only the purpose is mandatory; Send email is hidden without a payer email
+    await expect(page.getByTestId('request-breakdown').getByText('Amount Summary')).toBeVisible();
+    await expect(page.getByTestId('request-breakdown').getByText('Total You Receive')).toBeVisible();
     await expect(page.getByTestId('button-create-link')).toBeDisabled();
     await expect(page.getByTestId('button-send-email')).toHaveCount(0);
     await page.getByTestId('select-reason').click();

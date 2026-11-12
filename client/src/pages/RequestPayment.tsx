@@ -1295,64 +1295,129 @@ export default function RequestPayment() {
                       </div>
                     </div>
 
-                    {/* Payment breakdown */}
+                    {/* Amount Summary */}
                     <div className="lg:col-span-2 lg:self-start lg:sticky lg:top-24">
-                      <div className="border border-border rounded-xl p-5 space-y-4 bg-card shadow-sm" data-testid="fee-breakdown">
-                        <h3 className="font-semibold text-base text-slate-900 border-b pb-2">Payment breakdown</h3>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex justify-between gap-6">
-                            <span className="text-muted-foreground">Payer sends</span>
-                            <span className="font-bold text-slate-800 tabular-nums whitespace-nowrap" data-testid="breakdown-sender-pays">
+                      <Card className="border-2 border-gray-200 shadow-sm" data-testid="fee-breakdown">
+                        <CardHeader className="pb-4 bg-gray-50/50 border-b">
+                          <CardTitle className="text-base">Amount Summary</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 text-sm pt-4">
+                          {promoApplied && promoBonus > 0 && (
+                            <div className="flex justify-between font-medium text-green-700" data-testid="breakdown-promo-bonus">
+                              <span>Promo ({promoCode})</span>
+                              <span className="tabular-nums whitespace-nowrap">+{payoutSymbol}{promoBonus.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Payer Sends</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap" data-testid="breakdown-sender-pays">
                               {senderSymbol}{senderPaysAmount.toFixed(2)}
                             </span>
                           </div>
-                          <div className="flex justify-between gap-6 text-muted-foreground">
-                            <span>Fee (3%{formData.absorbFee ? ", taken from what you receive" : ", added for the payer"})</span>
-                            <span className={`font-medium tabular-nums whitespace-nowrap ${formData.absorbFee ? "text-red-600" : "text-slate-800"}`}>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Amount Sent</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderSymbol}{netBeforeFx.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">You Receive</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderCurrency === payoutCurrency
+                                ? `${payoutSymbol}${netBeforeFx.toFixed(2)}`
+                                : fxFinite
+                                ? `${payoutSymbol}${receiveInPayout.toFixed(2)}`
+                                : !corridorForSelection
+                                ? "Not available"
+                                : `${senderSymbol}${netBeforeFx.toFixed(2)}`}
+                              {promoApplied && promoBonus > 0 && (
+                                <span className="text-xs text-green-600 ml-2 font-bold">(+Bonus)</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Transaction Fee (3%)</span>
+                            <span className={`font-medium tabular-nums whitespace-nowrap ${formData.absorbFee ? "text-red-600" : "text-gray-900"}`}>
                               {formData.absorbFee ? "-" : "+"}{senderSymbol}{platformFeeAmount.toFixed(2)}
                             </span>
                           </div>
-                          <div className="flex justify-between gap-6 text-xs text-muted-foreground">
-                            <span>Net before FX</span>
-                            <span className="font-semibold text-slate-700 tabular-nums whitespace-nowrap">{senderSymbol}{netBeforeFx.toFixed(2)}</span>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Exchange Rate</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderCurrency === payoutCurrency
+                                ? `${senderSymbol}1 = ${payoutSymbol}1.00`
+                                : fxFinite
+                                ? `${senderSymbol}1 = ${payoutSymbol}${fxRate.toFixed(2)}`
+                                : "Live spot rate at payout"}
+                            </span>
                           </div>
-                          {senderCurrency !== payoutCurrency && (
-                            <div className="flex justify-between gap-6 text-xs bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-amber-900">
-                              <span className="font-medium">Exchange rate</span>
-                              <span className="font-semibold tabular-nums">{fxFinite ? `${fxRate.toFixed(4)} ${payoutCurrency} per ${senderCurrency}` : "Live spot rate at payout"}</span>
+                          <div className="flex justify-between gap-4 pt-2">
+                            <span className="text-gray-600">Connection Method</span>
+                            <span className="font-medium text-gray-900 text-right">Bank deposit</span>
+                          </div>
+
+                          <div className="pt-4 mt-2 border-t">
+                            <div className="flex justify-between items-center pt-2 gap-4">
+                              <span className="text-gray-900 font-bold text-base">Total You Receive</span>
+                              {senderCurrency === payoutCurrency ? (
+                                <span className="font-bold text-lg text-gray-900 tabular-nums whitespace-nowrap">
+                                  {payoutSymbol}{(netBeforeFx + promoBonus).toFixed(2)}
+                                </span>
+                              ) : fxFinite ? (
+                                <span className="font-bold text-lg text-gray-900 tabular-nums whitespace-nowrap">
+                                  {payoutSymbol}{(receiveInPayout + promoBonus).toFixed(2)}
+                                </span>
+                              ) : !corridorForSelection ? (
+                                <span className="font-bold text-lg text-muted-foreground whitespace-nowrap">Not available</span>
+                              ) : (
+                                <span className="font-bold text-lg text-gray-900 tabular-nums whitespace-nowrap">
+                                  {senderSymbol}{netBeforeFx.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                            {promoApplied && promoBonus > 0 && (
+                              <p className="text-xs text-green-600 font-medium mt-1">
+                                Includes promo code bonus (+{payoutSymbol}{promoBonus.toFixed(2)})
+                              </p>
+                            )}
+                            {senderCurrency !== payoutCurrency && fxFinite && (
+                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">
+                                Indicative. Converted at the live spot rate when the payer pays.
+                              </p>
+                            )}
+                            {senderCurrency !== payoutCurrency && !corridorForSelection && (
+                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">
+                                There is no route from {senderCurrency} to {payoutCurrency}. Choose a different payer currency or settlement account.
+                              </p>
+                            )}
+                            {senderCurrency !== payoutCurrency && corridorForSelection && !fxFinite && (
+                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">
+                                Converted to {payoutCurrency} at the live spot rate when the payer pays.
+                              </p>
+                            )}
+                          </div>
+
+                          {selectedPayoutAccount && (
+                            <div className="pt-4 mt-3 border-t space-y-2.5">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                Settlement Account Details
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-gray-600 shrink-0">Bank Name</span>
+                                <span className="font-medium text-gray-900 text-right truncate">
+                                  {selectedPayoutAccount.bankName || "—"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-gray-600 shrink-0">Account Number</span>
+                                <span className="font-mono font-medium text-gray-900 text-right break-all">
+                                  {selectedPayoutAccount.maskedNumber || "—"}
+                                </span>
+                              </div>
                             </div>
                           )}
-                          {promoApplied && promoBonus > 0 && (
-                            <div className="flex justify-between gap-6 text-xs bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 text-emerald-900" data-testid="breakdown-promo-bonus">
-                              <span className="font-medium">Promo {promoCode} bonus (paid into your bank on top)</span>
-                              <span className="font-semibold tabular-nums whitespace-nowrap">+{payoutSymbol}{promoBonus.toFixed(2)}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="h-px bg-border" />
-                        <div className="bg-primary/5 -mx-5 px-5 py-3.5 -mb-5 rounded-b-xl border-t border-primary/15">
-                          <p className="text-xs text-muted-foreground mb-0.5">You receive in bank ({payoutCurrency})</p>
-                          {senderCurrency === payoutCurrency ? (
-                            <span className="text-xl md:text-2xl font-extrabold text-primary tabular-nums">{payoutSymbol}{(netBeforeFx + promoBonus).toFixed(2)}</span>
-                          ) : fxFinite ? (
-                            <div>
-                              <span className="text-xl md:text-2xl font-extrabold text-primary tabular-nums">{payoutSymbol}{(receiveInPayout + promoBonus).toFixed(2)}</span>
-                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">Indicative. Converted at the live spot rate when the payer pays.</p>
-                            </div>
-                          ) : !corridorForSelection ? (
-                            <div>
-                              <span className="text-xl md:text-2xl font-extrabold text-muted-foreground">Not available</span>
-                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">There is no route from {senderCurrency} to {payoutCurrency}. Choose a different payer currency or settlement account.</p>
-                            </div>
-                          ) : (
-                            <div>
-                              <span className="text-xl md:text-2xl font-extrabold text-primary tabular-nums">{senderSymbol}{netBeforeFx.toFixed(2)}</span>
-                              <p className="text-[11px] font-medium text-amber-800 mt-1 leading-snug">Converted to {payoutCurrency} at the live spot rate when the payer pays.</p>
-                            </div>
-                          )}
-                          <p className="text-[10px] text-muted-foreground mt-1.5">Paid into {selectedPayoutAccount?.bankName || "your default account"}</p>
-                        </div>
-                      </div>
+                        </CardContent>
+                      </Card>
                     </div>
                   </div>
                 )}
@@ -1686,26 +1751,102 @@ export default function RequestPayment() {
                     </div>
 
                     <div className="lg:col-span-2 lg:self-start lg:sticky lg:top-24">
-                      <div className="border border-border rounded-xl p-5 space-y-3 bg-card shadow-sm text-sm" data-testid="request-breakdown">
-                        <h3 className="font-semibold text-base text-slate-900 border-b pb-2">Payment breakdown</h3>
-                        <div className="flex justify-between gap-6"><span className="text-muted-foreground">Payer sends</span><span className="font-bold tabular-nums whitespace-nowrap" data-testid="review-sender-pays">{senderSymbol}{senderPaysAmount.toFixed(2)}</span></div>
-                        <div className="flex justify-between gap-6 text-muted-foreground"><span>Fee (3%)</span><span className="tabular-nums whitespace-nowrap">{formData.absorbFee ? "-" : "+"}{senderSymbol}{platformFeeAmount.toFixed(2)}</span></div>
-                        {promoApplied && promoBonus > 0 && (
-                          <div className="flex justify-between gap-6 text-emerald-700" data-testid="review-promo-bonus">
-                            <span>Promo {promoCode} bonus (paid into your bank on top)</span>
-                            <span className="tabular-nums whitespace-nowrap">+{payoutSymbol}{promoBonus.toFixed(2)}</span>
+                      <Card className="border-2 border-gray-200 shadow-sm" data-testid="request-breakdown">
+                        <CardHeader className="pb-4 bg-gray-50/50 border-b">
+                          <CardTitle className="text-base">Amount Summary</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 text-sm pt-4">
+                          {promoApplied && promoBonus > 0 && (
+                            <div className="flex justify-between font-medium text-green-700" data-testid="review-promo-bonus">
+                              <span>Promo ({promoCode})</span>
+                              <span className="tabular-nums whitespace-nowrap">+{payoutSymbol}{promoBonus.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Payer Sends</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap" data-testid="review-sender-pays">
+                              {senderSymbol}{senderPaysAmount.toFixed(2)}
+                            </span>
                           </div>
-                        )}
-                        <div className="flex justify-between gap-6 font-semibold text-primary border-t border-dashed border-border pt-2">
-                          <span>You receive in bank</span>
-                          <span className="tabular-nums whitespace-nowrap">
-                            {senderCurrency === payoutCurrency
-                              ? `${payoutSymbol}${(netBeforeFx + promoBonus).toFixed(2)}`
-                              : fxFinite ? `${payoutSymbol}${(receiveInPayout + promoBonus).toFixed(2)}` : `${senderSymbol}${netBeforeFx.toFixed(2)}`}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Paid into {selectedPayoutAccount?.bankName} {selectedPayoutAccount?.maskedNumber}</p>
-                      </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Amount Sent</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderSymbol}{netBeforeFx.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">You Receive</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderCurrency === payoutCurrency
+                                ? `${payoutSymbol}${netBeforeFx.toFixed(2)}`
+                                : fxFinite
+                                ? `${payoutSymbol}${receiveInPayout.toFixed(2)}`
+                                : `${senderSymbol}${netBeforeFx.toFixed(2)}`}
+                              {promoApplied && promoBonus > 0 && (
+                                <span className="text-xs text-green-600 ml-2 font-bold">(+Bonus)</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Transaction Fee (3%)</span>
+                            <span className={`font-medium tabular-nums whitespace-nowrap ${formData.absorbFee ? "text-red-600" : "text-gray-900"}`}>
+                              {formData.absorbFee ? "-" : "+"}{senderSymbol}{platformFeeAmount.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-600">Exchange Rate</span>
+                            <span className="font-medium text-gray-900 tabular-nums whitespace-nowrap">
+                              {senderCurrency === payoutCurrency
+                                ? `${senderSymbol}1 = ${payoutSymbol}1.00`
+                                : fxFinite
+                                ? `${senderSymbol}1 = ${payoutSymbol}${fxRate.toFixed(2)}`
+                                : "Live spot rate at payout"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4 pt-2">
+                            <span className="text-gray-600">Connection Method</span>
+                            <span className="font-medium text-gray-900 text-right">Bank deposit</span>
+                          </div>
+
+                          <div className="pt-4 mt-2 border-t">
+                            <div className="flex justify-between items-center pt-2 gap-4">
+                              <span className="text-gray-900 font-bold text-base">Total You Receive</span>
+                              <span className="font-bold text-lg text-gray-900 tabular-nums whitespace-nowrap">
+                                {senderCurrency === payoutCurrency
+                                  ? `${payoutSymbol}${(netBeforeFx + promoBonus).toFixed(2)}`
+                                  : fxFinite
+                                  ? `${payoutSymbol}${(receiveInPayout + promoBonus).toFixed(2)}`
+                                  : `${senderSymbol}${netBeforeFx.toFixed(2)}`}
+                              </span>
+                            </div>
+                            {promoApplied && promoBonus > 0 && (
+                              <p className="text-xs text-green-600 font-medium mt-1">
+                                Includes promo code bonus (+{payoutSymbol}{promoBonus.toFixed(2)})
+                              </p>
+                            )}
+                          </div>
+
+                          {selectedPayoutAccount && (
+                            <div className="pt-4 mt-3 border-t space-y-2.5">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                Settlement Account Details
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-gray-600 shrink-0">Bank Name</span>
+                                <span className="font-medium text-gray-900 text-right truncate">
+                                  {selectedPayoutAccount.bankName || "—"}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-gray-600 shrink-0">Account Number</span>
+                                <span className="font-mono font-medium text-gray-900 text-right break-all">
+                                  {selectedPayoutAccount.maskedNumber || "—"}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     </div>
                   </div>
                 )}
