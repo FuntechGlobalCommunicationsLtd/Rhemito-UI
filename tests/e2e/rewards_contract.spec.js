@@ -43,17 +43,18 @@ const history = [
     { id: 'h6', created_at: '2026-09-30T10:00:00Z', type: 'CLAWBACK', reason_code: 'CLAWBACK', amount: -1, currency: 'GBP', notes: 'Clawback bookkeeping row', transfer_id: 'TXN-X', source_credit_id: null, credit_source: 'SCHEME' },
 ];
 
-function summary({ gbp = 7, usd = 0, referrals = friends, referralSummary, hist = [], blocked = false, balances: customBalances } = {}) {
+function summary({ gbp = 7, usd = 0, referrals = friends, referralSummary, hist = [], blocked = false, balances: customBalances, unused = [], referredBy } = {}) {
     const balances = customBalances ?? [];
     if (!customBalances) {
         if (gbp > 0) balances.push({ currency: 'GBP', available: gbp, earned: gbp + 8, used: 4, expired: 2, used_transfer_count: 1, referral_credit_count: 1, other_credit_count: 1, by_source: [{ credit_source: 'REFERRAL', label: 'Referrals', earned: gbp + 8, used: 8, expired: 0, removed: 0, available: gbp }] });
         if (usd > 0) balances.push({ currency: 'USD', available: usd, earned: usd, used: 0, expired: 0, used_transfer_count: 0, referral_credit_count: 0, other_credit_count: 1 });
     }
     return {
-        customer: { id: 'user_123', referralCode: 'JOHN2880', currency: 'GBP' },
+        customer: { id: 'user_123', referralCode: 'JOHN2880', currency: 'GBP', ...(referredBy ? { referredBy } : {}) },
+        ...(referredBy ? { referredBy } : {}),
         currency: 'GBP',
         offer,
-        wallet: { bonus_blocked: blocked, balances, unused: [], credits: [], history: hist, promo_redemptions: [] },
+        wallet: { bonus_blocked: blocked, balances, unused, credits: unused, history: hist, promo_redemptions: [] },
         referrals: { data: referrals, summary: referralSummary ?? { joined: 3, earned_count: 1, total_earned: { GBP: 5 } } },
         latestOffer: null,
     };
@@ -325,6 +326,167 @@ test.describe('Rewards contract — Bonus & Discounts', () => {
         await expect(rows).toHaveCount(2);
         await expect(page.getByTestId('bonus-history')).toContainText('Bonus credit expired');
         await expect(page.getByTestId('bonus-history')).toContainText('Bonus removed – transfer or request reversed');
+    });
+
+    /**
+     * CONTRACT BONUS-18: Dashboard surfaces the Earned Bonus & Quick Redeem card when bonus > 0, showing
+     * referee welcome attribution ("Invited by John Doe"), guardrails, Pay less / Send more modes, and a 1-click
+     * "Redeem on Send Money" CTA that navigates to /send-money?reward=referral with Step 1 bonus credit open.
+     * WHY: newly invited referees must immediately see their welcome credit and redeem it in one click.
+     * CODE: client/src/pages/Dashboard.tsx, client/src/pages/SendMoney.tsx.
+     */
+    test('[BONUS-18] Dashboard Earned Bonus & Quick Redeem card deep-links to Send Money Step 1 bonus credit', async ({ page }) => {
+        await mockRewards(page, {
+            referredBy: 'John Doe',
+            balances: [
+                {
+                    currency: 'GBP',
+                    available: 5,
+                    earned: 5,
+                    used: 0,
+                    expired: 0,
+                    used_transfer_count: 0,
+                    referral_credit_count: 1,
+                    other_credit_count: 0,
+                    by_source: [
+                        {
+                            credit_source: 'REFERRAL',
+                            label: 'Referrals',
+                            earned: 5,
+                            used: 0,
+                            expired: 0,
+                            removed: 0,
+                            available: 5,
+                            floor: 50,
+                            receive_currency: null,
+                        },
+                    ],
+                },
+            ],
+            unused: [
+                {
+                    id: 'cr_welcome_1',
+                    source: 'Welcome bonus – invited by John Doe',
+                    source_label: 'Welcome bonus – invited by John Doe',
+                    credit_source_label: 'Welcome bonus – invited by John Doe',
+                    credit_source: 'REFERRAL',
+                    reason_code: 'REFEREE',
+                    amount: 5,
+                    remaining: 5,
+                    currency: 'GBP',
+                    earned_on: '2026-11-13',
+                    expires_on: '2027-02-11',
+                    floor: 50,
+                    receive_currency: null,
+                    status: 'UNUSED',
+                },
+            ],
+        });
+
+        await page.goto('/');
+        const card = page.getByTestId('rewards-section-bonus-banners');
+        await expect(card).toBeVisible();
+        await expect(page.getByTestId('dashboard-total-unused-bonus')).toContainText('£5.00');
+        await expect(page.getByTestId('referral-bonus-earned-pill')).toContainText('Welcome bonus');
+        await expect(page.getByTestId('referral-bonus-earned-pill')).toContainText('Invited by John Doe');
+        await expect(card).toContainText('Min. transfer £50.00');
+        await expect(card).toContainText('GBP → All corridors');
+        await expect(card).toContainText('Expires 11/02/2027');
+        await expect(page.getByTestId('dashboard-bonus-redemption-modes')).toContainText('Pay less');
+        await expect(page.getByTestId('dashboard-bonus-redemption-modes')).toContainText('Send more');
+
+        await page.getByTestId('dashboard-redeem-send-money-cta').click();
+        await expect(page).toHaveURL(/\/send-money\?reward=referral/);
+        const bonusPanel = page.getByTestId('bonus-redemption');
+        await expect(bonusPanel).toBeVisible();
+        await expect(bonusPanel).toContainText('Use your Referral Credit');
+        await expect(bonusPanel).toContainText('£5.00 available');
+    });
+
+    /**
+     * CONTRACT BONUS-20: when a verified referee returns from /kyc directly onto Step 4 (resumeStep: 4),
+     * Step 4 surfaces step4-rewards-card with their Referral Credit auto-open, and selecting Pay less updates
+     * both summary-bonus / summary-total and the payment method row ("You pay GBP ...").
+     * WHY: newly registered users complete KYC between Step 1/2/3 and Step 4 and must be able to see and apply
+     * their welcome bonus right on Step 4 without losing it across the KYC redirect.
+     * CODE: client/src/pages/SendMoney.tsx, server/sendMoneyRoutes.ts.
+     */
+    test('[BONUS-20] post-KYC resume onto Step 4 surfaces earned referral credit and applies Pay less to payment total', async ({ page }) => {
+        await mockRewards(page, {
+            referredBy: 'John Doe',
+            balances: [
+                {
+                    currency: 'GBP',
+                    available: 5,
+                    earned: 5,
+                    used: 0,
+                    expired: 0,
+                    used_transfer_count: 0,
+                    referral_credit_count: 1,
+                    other_credit_count: 0,
+                    by_source: [
+                        {
+                            credit_source: 'REFERRAL',
+                            label: 'Referrals',
+                            earned: 5,
+                            used: 0,
+                            expired: 0,
+                            removed: 0,
+                            available: 5,
+                            floor: 50,
+                            receive_currency: null,
+                        },
+                    ],
+                },
+            ],
+            unused: [
+                {
+                    id: 'cr_kyc_step4_1',
+                    source: 'Welcome bonus – invited by John Doe',
+                    source_label: 'Welcome bonus – invited by John Doe',
+                    credit_source_label: 'Welcome bonus – invited by John Doe',
+                    credit_source: 'REFERRAL',
+                    reason_code: 'REFEREE',
+                    amount: 5,
+                    remaining: 5,
+                    currency: 'GBP',
+                    earned_on: '2026-11-13',
+                    expires_on: '2027-02-11',
+                    floor: 50,
+                    receive_currency: null,
+                    status: 'UNUSED',
+                },
+            ],
+        });
+
+        await page.goto('/');
+        await page.evaluate(() => {
+            window.sessionStorage.setItem('rhemito_kyc_just_completed', 'true');
+            window.localStorage.setItem(
+                'kyc_context',
+                JSON.stringify({
+                    resumeStep: 4,
+                    amount: '100',
+                    sendCurrencyState: 'GBP',
+                    receiveCurrency: 'NGN',
+                }),
+            );
+        });
+        await page.goto('/send-money');
+
+        const step4Card = page.getByTestId('step4-rewards-card');
+        await expect(step4Card).toBeVisible();
+        const step4BonusPanel = step4Card.getByTestId('bonus-redemption');
+        await expect(step4BonusPanel).toBeVisible();
+        await expect(step4BonusPanel).toContainText('Use your Referral Credit');
+        await expect(step4BonusPanel).toContainText('£5.00 available');
+
+        const totalBefore = await num(page.getByTestId('summary-total'));
+        await step4BonusPanel.getByRole('radio', { name: /Pay less/ }).check();
+        await expect(page.getByTestId('summary-bonus')).toContainText('- £5.00');
+        await expect.poll(async () => await num(page.getByTestId('summary-total'))).toBe(totalBefore - 5);
+        const expectedTotal = (totalBefore - 5).toFixed(2);
+        await expect(page.getByText(`You pay GBP ${expectedTotal}`).first()).toBeVisible();
     });
 });
 

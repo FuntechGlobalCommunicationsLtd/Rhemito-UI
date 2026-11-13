@@ -41,6 +41,35 @@ function summary({ blocked = false, debt = 0, offer = null } = {}) {
 }
 
 async function mock(page, { offers = [], bonusDown = false, ...opts } = {}) {
+    await page.route('**/api/send-money/mito/beneficiaries**', (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                data: {
+                    configured: true,
+                    beneficiaries: [
+                        {
+                            beneficiaryId: '11111111-2222-3333-4444-555555555555',
+                            name: 'Akshita',
+                            firstName: 'Akshita',
+                            lastName: 'Sharma',
+                            legalEntityType: 'individual',
+                            providerId: 'e3af932a-0326-4b65-b5f4-e8f753a69d4d',
+                            bankName: 'United Bank for Africa Plc (UBA)',
+                            acctNumber: '1018316888',
+                            relationship: 'FRIEND',
+                            reason: 'FOROWNEXPENDITURES',
+                            narration: 'Family allowance',
+                            currency: 'NGN',
+                            country: 'Nigeria',
+                            countryIso3: 'NGA',
+                        },
+                    ],
+                },
+            }),
+        }),
+    );
     await page.route('**/api/rewards/summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: summary(opts) }) }));
     await page.route('**/api/promocodes/savings**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { items: [], saved: {} } }) }));
     await page.route('**/api/bonus/summary**', (route) =>
@@ -165,7 +194,7 @@ test.describe('Send Money — use your bonus', () => {
         await page.getByRole('radio', { name: /Pay less/ }).check();
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details')).toBeVisible();
+        await expect(page.getByText('Recipient Details').first()).toBeVisible();
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByText('Credit/Debit Card').click();
         await expect(page.getByText('Your bonus balance has changed. Please review your transfer.').first()).toBeVisible();

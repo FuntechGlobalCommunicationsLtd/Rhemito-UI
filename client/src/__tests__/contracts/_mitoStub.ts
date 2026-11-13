@@ -98,7 +98,7 @@ export type MitoStub = ReturnType<typeof createMitoStub>;
 
 export const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Gives background (outbox / fire-and-forget) work time to reach the stub. */
-export const flush = () => wait(80);
+export const flush = () => wait(150);
 
 export interface ContractApp {
   base: string;

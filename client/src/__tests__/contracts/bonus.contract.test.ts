@@ -5,7 +5,13 @@
  */
 import React from "react";
 import { afterAll, beforeAll, beforeEach, describe, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { NotificationContextProvider } from "@/contexts/NotificationContext";
+import { ContactsProvider } from "@/contexts/ContactsContext";
+import Dashboard from "@/pages/Dashboard";
+import SendMoney from "@/pages/SendMoney";
 import { bootContractApp, flush, resetContractApp, type ContractApp } from "./_mitoStub";
 import { countMatches, rule, source } from "./_contract";
 import {
@@ -224,10 +230,10 @@ describe("The bonus panel and the choice", () => {
     where: ["client/src/pages/SendMoney.tsx"],
   }, () => {
     const page = source("client/src/pages/SendMoney.tsx");
-    expect(countMatches(page, /<UseBonusCredit\b/)).toBeGreaterThanOrEqual(1);
-    expect(countMatches(page, /choice=\{bonusChoice\}/)).toBeGreaterThanOrEqual(1);
-    expect(countMatches(page, /onChoice=\{setBonusChoice\}/)).toBeGreaterThanOrEqual(1);
-    expect(countMatches(page, /balance=\{bonusWallet\}/)).toBeGreaterThanOrEqual(1);
+    expect(countMatches(page, /<UseBonusCredit\b/)).toBe(2);
+    expect(countMatches(page, /choice=\{bonusChoice\}/)).toBe(2);
+    expect(countMatches(page, /onChoice=\{setBonusChoice\}/)).toBe(2);
+    expect(countMatches(page, /balance=\{bonusWallet\}/)).toBe(2);
     expect(countMatches(page, /useState<BonusChoice>/)).toBe(1);
     // the step-1 summary row and the payment summary row both reflect the choice
     expect(page).toContain('data-testid="summary-bonus-step1"');
@@ -388,6 +394,560 @@ describe("Sources, expiry and history labels", () => {
     const off = await ctx.api("GET", "/api/bonus/wallet");
     expect(off.status).toBe(404);
     expect(off.body.error.code).toBe("BONUS_DISABLED");
+    await flush();
+  });
+});
+
+describe("Dashboard Earned Bonus & Quick Redeem card and Send Money deep-link", () => {
+  beforeAll(() => {
+    if (!window.matchMedia) {
+      window.matchMedia = (query: string): MediaQueryList => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      });
+    }
+    if (typeof (globalThis as Record<string, unknown>).ResizeObserver === "undefined") {
+      (globalThis as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    }
+  });
+
+  function renderWithRewards(ui: React.ReactElement, rewardsSummary: Record<string, unknown>, initialUrl = "/") {
+    const realFetch = globalThis.fetch;
+    window.history.replaceState({}, "", initialUrl);
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Infinity },
+      },
+    });
+    qc.setQueryData(["/api/rewards/summary"], rewardsSummary);
+    qc.setQueryData(["/api/auth/me"], {
+      user: {
+        id: "user_referee",
+        email: "david@example.com",
+        accountType: "individual",
+        country: "GB",
+        firstName: "David",
+        lastName: "Beckham",
+        status: "active",
+      },
+    });
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const json = (payload: unknown) =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/api/rewards/summary")) return json({ data: rewardsSummary });
+      if (url.includes("/api/auth/me")) {
+        return json({
+          user: {
+            id: "user_referee",
+            email: "david@example.com",
+            accountType: "individual",
+            country: "GB",
+            firstName: "David",
+            lastName: "Beckham",
+            status: "active",
+          },
+        });
+      }
+      if (url.includes("/api/promocodes/status")) return json({ data: { enabled: true } });
+      if (url.includes("/api/send-money/mito/beneficiaries")) {
+        return json({ data: { configured: true, beneficiaries: [] } });
+      }
+      return json({ data: [] });
+    }) as typeof fetch;
+
+    const view = render(
+      React.createElement(
+        QueryClientProvider,
+        { client: qc },
+        React.createElement(
+          NotificationContextProvider,
+          null,
+          React.createElement(
+            ContactsProvider,
+            null,
+            React.createElement(TooltipProvider, null, ui),
+          ),
+        ),
+      ),
+    );
+
+    const cleanup = () => {
+      view.unmount();
+      qc.clear();
+      globalThis.fetch = realFetch;
+      window.history.replaceState({}, "", "/");
+    };
+
+    return { view, cleanup };
+  }
+
+  const baseOffer = {
+    rule_id: 1,
+    currency: "GBP",
+    reward_type: "BOTH",
+    referrer_reward: 5,
+    referee_reward: 5,
+    floor: 50,
+    qualification_window_days: 90,
+    bonus_validity_days: 90,
+    min_redeem_amount: 0,
+    text: "Give £5.00, get £5.00 when your friend sends £50.00+.",
+  };
+
+  rule("BONUS-18", "Dashboard surfaces the Earned Bonus & Quick Redeem card when bonus > 0, a dismissible referee strip when 0-balance & referred, and nothing for 0-balance unreferred users", {
+    why: "Referees and bonus holders must immediately see their earned credit, inviter attribution, guardrails, Pay less / Send more modes, and a 1-click Send Money CTA — without cluttering zero-balance dashboards.",
+    fix: "client/src/pages/Dashboard.tsx: render rewards-section-bonus-banners only when displayBonusBalances.length > 0, render referee-linked-info-strip when 0-balance & referredBy is present, and deep-link Redeem on Send Money to /send-money?reward=...",
+    where: ["client/src/pages/Dashboard.tsx"],
+  }, () => {
+    // 1. Zero-balance unreferred user -> neither bonus card nor referee strip renders
+    const unreferredSummary = {
+      customer: { id: "user_plain", referralCode: "PLAIN001", currency: "GBP" },
+      currency: "GBP",
+      offer: baseOffer,
+      wallet: { bonus_blocked: false, balances: [], unused: [], credits: [], history: [], promo_redemptions: [] },
+      referrals: { data: [], summary: { joined: 0, earned_count: 0, total_earned: {} } },
+      latestOffer: null,
+    };
+    const r1 = renderWithRewards(React.createElement(Dashboard), unreferredSummary, "/");
+    try {
+      expect(r1.view.queryByTestId("rewards-section-bonus-banners")).toBeNull();
+      expect(r1.view.queryByTestId("referee-linked-info-strip")).toBeNull();
+    } finally {
+      r1.cleanup();
+    }
+
+    // 2. Referee welcome bonus (+£5.00 GBP, invited by John Doe, floor £50, expires 2027-02-11)
+    const refereeBonusSummary = {
+      customer: { id: "user_referee", referralCode: "DAVID007", currency: "GBP", referredBy: "John Doe" },
+      currency: "GBP",
+      referredBy: "John Doe",
+      offer: baseOffer,
+      wallet: {
+        bonus_blocked: false,
+        balances: [
+          {
+            currency: "GBP",
+            available: 5,
+            earned: 5,
+            ...zero,
+            referral_credit_count: 1,
+            by_source: [
+              {
+                credit_source: "REFERRAL",
+                label: "Referrals",
+                earned: 5,
+                used: 0,
+                expired: 0,
+                removed: 0,
+                available: 5,
+                floor: 50,
+                receive_currency: null,
+              },
+            ],
+          },
+        ],
+        unused: [
+          {
+            id: "cr_referee_gbp",
+            source: "Welcome bonus – invited by John Doe",
+            source_label: "Welcome bonus – invited by John Doe",
+            credit_source_label: "Welcome bonus – invited by John Doe",
+            credit_source: "REFERRAL",
+            reason_code: "REFEREE",
+            amount: 5,
+            remaining: 5,
+            currency: "GBP",
+            earned_on: "2026-11-13",
+            expires_on: "2027-02-11",
+            floor: 50,
+            receive_currency: null,
+            status: "UNUSED",
+          },
+        ],
+        credits: [],
+        history: [],
+        promo_redemptions: [],
+      },
+      referrals: { data: [], summary: { joined: 0, earned_count: 0, total_earned: {} } },
+      latestOffer: null,
+    };
+    const r2 = renderWithRewards(React.createElement(Dashboard), refereeBonusSummary, "/");
+    try {
+      const card = r2.view.getByTestId("rewards-section-bonus-banners");
+      expect(card).toBeTruthy();
+      expect(r2.view.queryByTestId("referee-linked-info-strip")).toBeNull();
+      expect(r2.view.getByTestId("dashboard-total-unused-bonus").textContent).toContain("£5.00");
+      const pill = r2.view.getByTestId("referral-bonus-earned-pill");
+      expect(pill.textContent).toContain("Welcome bonus");
+      expect(pill.textContent).toContain("Invited by John Doe");
+      expect(card.textContent).toContain("Min. transfer £50.00");
+      expect(card.textContent).toContain("GBP → All corridors");
+      expect(card.textContent).toContain("Expires 11/02/2027");
+      const modes = r2.view.getByTestId("dashboard-bonus-redemption-modes");
+      expect(modes.textContent).toContain("Pay less");
+      expect(modes.textContent).toContain("Send more");
+
+      fireEvent.click(r2.view.getByTestId("dashboard-redeem-send-money-cta"));
+      expect(window.location.pathname + window.location.search).toBe("/send-money?reward=referral");
+    } finally {
+      r2.cleanup();
+    }
+
+    // 2b. Non-GBP restricted corridor referral bonus ($10.00 USD -> GHS) passes currency & corridor query params
+    const usdCorridorSummary = {
+      ...refereeBonusSummary,
+      currency: "USD",
+      offer: { ...baseOffer, currency: "USD", receive_currency: "GHS", floor: 50 },
+      wallet: {
+        ...refereeBonusSummary.wallet,
+        balances: [
+          {
+            currency: "USD",
+            available: 10,
+            earned: 10,
+            ...zero,
+            referral_credit_count: 1,
+            by_source: [
+              {
+                credit_source: "REFERRAL",
+                label: "Referrals",
+                earned: 10,
+                used: 0,
+                expired: 0,
+                removed: 0,
+                available: 10,
+                floor: 50,
+                receive_currency: "GHS",
+              },
+            ],
+          },
+        ],
+        unused: [
+          {
+            id: "cr_referee_usd",
+            source: "Welcome bonus – invited by John Doe",
+            source_label: "Welcome bonus – invited by John Doe",
+            credit_source_label: "Welcome bonus – invited by John Doe",
+            credit_source: "REFERRAL",
+            reason_code: "REFEREE",
+            amount: 10,
+            remaining: 10,
+            currency: "USD",
+            earned_on: "2026-11-13",
+            expires_on: "2027-02-11",
+            floor: 50,
+            receive_currency: "GHS",
+            status: "UNUSED",
+          },
+        ],
+      },
+    };
+    const r2b = renderWithRewards(React.createElement(Dashboard), usdCorridorSummary, "/");
+    try {
+      expect(r2b.view.getByTestId("rewards-section-bonus-banners").textContent).toContain("USD → GHS");
+      fireEvent.click(r2b.view.getByTestId("dashboard-redeem-send-money-cta"));
+      expect(window.location.pathname + window.location.search).toBe("/send-money?reward=referral&currency=USD&to=GHS");
+    } finally {
+      r2b.cleanup();
+    }
+
+    // 3. Referee under REFERRER-only rule (0 balance + referredBy) -> dismissible referee-linked-info-strip
+    const referrerOnlyRefereeSummary = {
+      customer: { id: "user_referee", referralCode: "DAVID007", currency: "GBP", referredBy: "John Doe" },
+      currency: "GBP",
+      referredBy: "John Doe",
+      offer: { ...baseOffer, reward_type: "REFERRER", referee_reward: 0, floor: 50 },
+      wallet: { bonus_blocked: false, balances: [], unused: [], credits: [], history: [], promo_redemptions: [] },
+      referrals: { data: [], summary: { joined: 0, earned_count: 0, total_earned: {} } },
+      latestOffer: null,
+    };
+    const r3 = renderWithRewards(React.createElement(Dashboard), referrerOnlyRefereeSummary, "/");
+    try {
+      expect(r3.view.queryByTestId("rewards-section-bonus-banners")).toBeNull();
+      const strip = r3.view.getByTestId("referee-linked-info-strip");
+      expect(strip.textContent).toContain("Referral link connected");
+      expect(strip.textContent).toContain("£50.00+");
+      fireEvent.click(r3.view.getByLabelText("Dismiss referral notice"));
+      expect(r3.view.queryByTestId("referee-linked-info-strip")).toBeNull();
+    } finally {
+      r3.cleanup();
+    }
+  });
+
+  rule("BONUS-19", "Send Money deep-link (?reward=referral|bonus&currency=...&to=...) pre-selects send currency, receive corridor, and expands Step 1 bonus redemption", {
+    why: "Clicking 'Redeem on Send Money' from the Dashboard or Reward$ must drop the customer straight into an eligible corridor with their credit panel open on Step 1.",
+    fix: "client/src/pages/SendMoney.tsx: parse reward, currency, and to query parameters case-insensitively on mount and open UseBonusCredit on Step 1.",
+    where: ["client/src/pages/SendMoney.tsx"],
+  }, () => {
+    const usdGhsSummary = {
+      customer: { id: "user_referee", referralCode: "DAVID007", currency: "USD" },
+      currency: "USD",
+      sendCurrencies: ["GBP", "USD", "EUR", "CAD"],
+      offer: { ...baseOffer, currency: "USD", receive_currency: "GHS", floor: 50 },
+      offers: [{ ...baseOffer, currency: "USD", receive_currency: "GHS", floor: 50 }],
+      wallet: {
+        bonus_blocked: false,
+        balances: [
+          {
+            currency: "USD",
+            available: 10,
+            earned: 10,
+            ...zero,
+            referral_credit_count: 1,
+            by_source: [
+              {
+                credit_source: "REFERRAL",
+                label: "Referrals",
+                earned: 10,
+                used: 0,
+                expired: 0,
+                removed: 0,
+                available: 10,
+                floor: 50,
+                receive_currency: "GHS",
+              },
+            ],
+          },
+        ],
+        unused: [
+          {
+            id: "cr_usd_ghs",
+            source: "Welcome bonus – invited by John Doe",
+            credit_source: "REFERRAL",
+            reason_code: "REFEREE",
+            amount: 10,
+            remaining: 10,
+            currency: "USD",
+            earned_on: "2026-11-13",
+            expires_on: "2027-02-11",
+            floor: 50,
+            receive_currency: "GHS",
+            status: "UNUSED",
+          },
+        ],
+        credits: [],
+        history: [],
+        promo_redemptions: [],
+      },
+      referrals: { data: [], summary: { joined: 0, earned_count: 0, total_earned: {} } },
+      latestOffer: null,
+    };
+
+    const r = renderWithRewards(React.createElement(SendMoney), usdGhsSummary, "/send-money?reward=referral&currency=USD&to=GHS");
+    try {
+      expect(r.view.getByTestId("send-currency-select").textContent).toContain("USD");
+      expect(r.view.getByTestId("receive-currency-select").textContent).toContain("GHS");
+      const panel = r.view.getByTestId("bonus-redemption");
+      expect(panel.textContent).toContain("Use your Referral Credit");
+      expect(panel.textContent).toContain("$10.00 available");
+      expect(r.view.getByTestId("bonus-floor-met-notice").textContent).toContain("Corridor USD → GHS matched");
+    } finally {
+      r.cleanup();
+    }
+  });
+
+  rule("BONUS-20", "Post-KYC resume onto Step 4 preserves bonusChoice across async wallet load, and Step-4 pay syncs send_more receiveAmount or drops a Step-1 draft promo when switching to bonus", {
+    why: "Newly verified referees returning from /kyc directly onto Step 4 must not lose their reward choice while /api/rewards/summary is still loading, and Step-4 payment choices must record accurate recipient amounts and promo/bonus exclusivity on the server.",
+    fix: "SendMoney.tsx: save/restore bonusChoice, activeRewardTab, bonusPanelOpen in kyc_context, guard the bonusBalance <= 0 reset with rewards.isLoading || !rewards.data, and render step4-rewards-card. server/sendMoneyRoutes.ts: recompute receiveAmountMinor for send_more and clear draft tx.promoCode when bonusCredit is chosen on Step 4 without promoCode.",
+    where: ["client/src/pages/SendMoney.tsx", "server/sendMoneyRoutes.ts"],
+  }, async () => {
+    // (a) Post-KYC resume onto Step 4 with async /api/rewards/summary resolution (not pre-seeded in QueryClient)
+    const gbpKycSummary = {
+      customer: { id: "user_referee", referralCode: "DAVID007", currency: "GBP", referredBy: "John Doe" },
+      currency: "GBP",
+      referredBy: "John Doe",
+      sendCurrencies: ["GBP", "USD", "EUR", "CAD"],
+      offer: baseOffer,
+      offers: [baseOffer],
+      wallet: {
+        bonus_blocked: false,
+        balances: [
+          {
+            currency: "GBP",
+            available: 5,
+            earned: 5,
+            ...zero,
+            referral_credit_count: 1,
+            by_source: [
+              {
+                credit_source: "REFERRAL",
+                label: "Referrals",
+                earned: 5,
+                used: 0,
+                expired: 0,
+                removed: 0,
+                available: 5,
+                floor: 50,
+                receive_currency: null,
+              },
+            ],
+          },
+        ],
+        unused: [
+          {
+            id: "cr_kyc_gbp",
+            source: "Welcome bonus – invited by John Doe",
+            source_label: "Welcome bonus – invited by John Doe",
+            credit_source_label: "Welcome bonus – invited by John Doe",
+            credit_source: "REFERRAL",
+            reason_code: "REFEREE",
+            amount: 5,
+            remaining: 5,
+            currency: "GBP",
+            earned_on: "2026-11-13",
+            expires_on: "2027-02-11",
+            floor: 50,
+            receive_currency: null,
+            status: "UNUSED",
+          },
+        ],
+        credits: [],
+        history: [],
+        promo_redemptions: [],
+      },
+      referrals: { data: [], summary: { joined: 0, earned_count: 0, total_earned: {} } },
+      latestOffer: null,
+    };
+
+    const realFetch = globalThis.fetch;
+    window.history.replaceState({}, "", "/send-money");
+    sessionStorage.setItem("rhemito_kyc_just_completed", "true");
+    localStorage.setItem(
+      "kyc_context",
+      JSON.stringify({
+        resumeStep: 4,
+        amount: "100",
+        sendCurrencyState: "GBP",
+        receiveCurrency: "NGN",
+        bonusChoice: "pay_less",
+        activeRewardTab: "referral",
+        bonusPanelOpen: true,
+      }),
+    );
+
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Infinity },
+      },
+    });
+    // Intentionally do NOT pre-seed ["/api/rewards/summary"] so rewards.isLoading starts true on mount
+    qc.setQueryData(["/api/auth/me"], {
+      user: {
+        id: "user_referee",
+        email: "david@example.com",
+        accountType: "individual",
+        country: "GB",
+        firstName: "David",
+        lastName: "Beckham",
+        status: "active",
+      },
+    });
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const json = (payload: unknown) =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/api/rewards/summary")) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return json({ data: gbpKycSummary });
+      }
+      if (url.includes("/api/auth/me")) {
+        return json({
+          user: {
+            id: "user_referee",
+            email: "david@example.com",
+            accountType: "individual",
+            country: "GB",
+            firstName: "David",
+            lastName: "Beckham",
+            status: "active",
+          },
+        });
+      }
+      if (url.includes("/api/promocodes/status")) return json({ data: { enabled: true } });
+      if (url.includes("/api/send-money/mito/beneficiaries")) {
+        return json({ data: { configured: true, beneficiaries: [] } });
+      }
+      return json({ data: [] });
+    }) as typeof fetch;
+
+    const view = render(
+      React.createElement(
+        QueryClientProvider,
+        { client: qc },
+        React.createElement(
+          NotificationContextProvider,
+          null,
+          React.createElement(
+            ContactsProvider,
+            null,
+            React.createElement(TooltipProvider, null, React.createElement(SendMoney)),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await waitFor(() => {
+        expect(view.getByTestId("step4-rewards-card")).toBeTruthy();
+        const panel = view.getByTestId("bonus-redemption");
+        expect(panel.textContent).toContain("£5.00 available");
+        const payLessRadio = panel.querySelector('input[value="pay_less"]') as HTMLInputElement | null;
+        expect(payLessRadio?.checked).toBe(true);
+        expect(view.getByTestId("summary-bonus").textContent).toContain("- £5.00");
+      });
+    } finally {
+      view.unmount();
+      qc.clear();
+      globalThis.fetch = realFetch;
+      sessionStorage.removeItem("rhemito_kyc_just_completed");
+      localStorage.removeItem("kyc_context");
+      window.history.replaceState({}, "", "/");
+    }
+
+    // (b.1) Server Step-4 send_more updates receiveAmount on an unboosted Step-2/3 transaction
+    ctx.stub.reset();
+    const txSendMore = await ctx.newTx(); // sendAmount 100.00, receiveAmount 202550.00, exchangeRate 2025.50
+    const rSendMore = await pay(txSendMore.id, withBonus("10.00", "send_more"));
+    expect(rSendMore.status).toBe(200);
+    expect(rSendMore.body.data).toMatchObject({
+      status: "completed",
+      bonusCredit: "10.00",
+      bonusCreditMode: "send_more",
+      receiveAmount: "222805.00",
+    });
+
+    // (b.2) Server Step-1 draft promo -> Step-4 bonus switch drops draft promo without redeeming it
+    ctx.stub.reset();
+    const txDraftPromo = await ctx.newTx({ promoCode: "SAVE5", fee: "2.00", feeBeforePromo: "3.00" });
+    const rSwitch = await pay(txDraftPromo.id, withBonus("10.00", "pay_less"));
+    expect(rSwitch.status).toBe(200);
+    expect(rSwitch.body.data).toMatchObject({
+      status: "completed",
+      promoCode: null,
+      fee: "3.00",
+      bonusCredit: "10.00",
+      bonusCreditMode: "pay_less",
+    });
+    expect(ctx.stub.to("/api/promocodes/redeem")).toHaveLength(0);
     await flush();
   });
 });

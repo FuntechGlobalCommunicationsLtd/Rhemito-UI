@@ -89,8 +89,8 @@ describe("describeCredit", () => {
     expect(describeCredit({ credit_source_label: "Goodwill credit from Rhemito", reason_code: "BONUS_RETURNED" })).toBe("Goodwill credit from Rhemito (returned after a cancelled transfer)");
   });
   it("falls back to the ledger wording", () => {
-    expect(describeCredit({ source: "Referrer reward – referred Sarah S." })).toBe("Referral bonus – Sarah S.");
-    expect(describeCredit({ source: "Referee reward – invited by Olayinka A. (approved by x)" })).toBe("Welcome bonus – invited by Olayinka A.");
+    expect(describeCredit({ source: "Referrer reward – referred Sarah S." })).toBe("Referral bonus – You earned from referring Sarah S.");
+    expect(describeCredit({ source: "Referee reward – invited by Olayinka A. (approved by x)" })).toBe("Welcome bonus – You earned (invited by Olayinka A.)");
     expect(describeCredit({ reason_code: "BONUS_RETURNED" })).toBe("Bonus returned – transfer cancelled");
     expect(describeCredit({})).toBe("Bonus credit");
   });

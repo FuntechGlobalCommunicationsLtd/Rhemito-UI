@@ -37,9 +37,17 @@ import {
 } from "@/lib/unifiedTransactions";
 import { useToast } from "@/hooks/use-toast";
 import { useRewards } from "@/hooks/use-rewards";
-import { balanceFor, formatMoney } from "@/features/bonus";
+import {
+  BONUS_COPY,
+  BonusBlockedNotice,
+  BonusCreditPill,
+  balanceFor,
+  daysUntil,
+  expiringSoon,
+  formatMoney,
+  formatUkDate,
+} from "@/features/bonus";
 import { ReferEarnCard } from "@/components/rewards/ReferEarnCard";
-import { BonusBlockedNotice, BonusCreditPill } from "@/features/bonus";
 import { OfferBanner } from "@/components/rewards/OfferBanner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -850,6 +858,21 @@ export default function Dashboard() {
       ? savedEntries.map(([c, v]) => formatMoney(v, c)).join(" + ")
       : formatMoney(0, displayBonusBalances[0]?.currency ?? rewardsCurrency);
   const [referHighlighted, setReferHighlighted] = useState(false);
+  const [selectedBonusCurrency, setSelectedBonusCurrency] = useState<string>("");
+  const [dismissedRefereeStrip, setDismissedRefereeStrip] = useState<boolean>(false);
+  const activeBonusBalance =
+    displayBonusBalances.find((b) => b.currency === selectedBonusCurrency) ??
+    displayBonusBalances[0] ??
+    null;
+  const refereeReferredBy = String(
+    (rewards.data as { referredBy?: string; referred_by?: string } | undefined)?.referredBy ??
+      (rewards.data as { referredBy?: string; referred_by?: string } | undefined)?.referred_by ??
+      (rewards.data?.customer as { referredBy?: string; referred_by?: string } | null | undefined)?.referredBy ??
+      (rewards.data?.customer as { referredBy?: string; referred_by?: string } | null | undefined)?.referred_by ??
+      "",
+  ).trim();
+  const showRefereeZeroBalanceStrip =
+    displayBonusBalances.length === 0 && Boolean(refereeReferredBy) && !dismissedRefereeStrip;
   const viewReferOffer = () => {
     document.getElementById("refer-earn")?.scrollIntoView({ behavior: "smooth", block: "center" });
     setReferHighlighted(true);
@@ -1251,180 +1274,342 @@ export default function Dashboard() {
           </Card>
         </motion.div>
 
-        {/* Refer & Earn full-width split banner underneath Quick Service (Your bonus credits hidden per user request) */}
+        {/* Earned Bonus & Quick Redeem card (when available > 0) + Refer & Earn banner underneath Quick Service */}
         {(rewards.data?.wallet.bonus_blocked ||
           rewards.data?.offer ||
           rewards.isLoading ||
           rewards.isError ||
-          displayBonusBalances.length > 0) && (
+          displayBonusBalances.length > 0 ||
+          showRefereeZeroBalanceStrip) && (
           <motion.div variants={itemVariants} className="flex flex-col gap-4">
             {rewards.data?.wallet.bonus_blocked && <BonusBlockedNotice />}
             <div className="grid grid-cols-1 gap-4 items-stretch">
-              {displayBonusBalances.length > 0 && (
-                <Card
-                  data-testid="rewards-section-bonus-banners"
-                  className="hidden h-full rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs flex-col justify-between gap-4"
+              {showRefereeZeroBalanceStrip && (
+                <div
+                  data-testid="referee-linked-info-strip"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50/70 px-4 py-2.5 text-xs sm:text-[13px] text-teal-900"
                 >
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 leading-tight">
-                          Your bonus credits
-                        </h2>
-                        <p className="text-sm text-slate-500 mt-0.5">Earned and ready to use.</p>
-                      </div>
-                      <div
-                        data-testid="dashboard-total-unused-bonus"
-                        className="flex items-center gap-3 rounded-2xl bg-[#F3EEFF] px-4 py-2.5 shrink-0"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          aria-hidden="true"
-                          className="h-5 w-5 text-purple-600 shrink-0"
-                        >
-                          <ellipse cx="10" cy="7" rx="6" ry="2.5" stroke="currentColor" strokeWidth="1.8" />
-                          <path
-                            d="M4 7v4c0 1.38 2.69 2.5 6 2.5s6-1.12 6-2.5V7"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M4 11v4c0 1.38 2.69 2.5 6 2.5s6-1.12 6-2.5v-4"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          />
-                          <path
-                            d="M16 10.2c2.3.4 4 1.28 4 2.3v4c0 1.38-2.69 2.5-6 2.5-1.9 0-3.6-.37-4.7-.95"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <div>
-                          <p className="font-display text-lg sm:text-xl font-bold text-slate-900 leading-tight">
-                            {totalUnusedText}
-                          </p>
-                          <p className="text-xs font-medium text-slate-500">Available credit</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2.5">
-                      {displayBonusBalances.map((bal) => {
-                        const floorForCur =
-                          rewards.data?.offers?.find((o) => o.currency === bal.currency)?.floor ??
-                          (rewards.data?.offer?.currency === bal.currency || !rewards.data?.offer?.currency
-                            ? rewards.data?.offer?.floor
-                            : undefined);
-                        return (
-                          <BonusCreditPill
-                            key={`bonus-pill-${bal.currency}`}
-                            balance={bal}
-                            unused={rewards.data?.wallet.unused}
-                            referralFloor={floorForCur}
-                            onCreateTransaction={(rewardType) => {
-                              const params = new URLSearchParams();
-                              if (rewardType) params.set("reward", rewardType);
-                              if (bal.currency && bal.currency !== "GBP") params.set("currency", bal.currency);
-                              const qs = params.toString();
-                              setLocation(qs ? `/send-money?${qs}` : "/send-money");
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-
-                    {/* Fintech Redemption Modes Split Box — Pay less vs. Send more */}
-                    <div className="flex flex-col gap-1.5" data-testid="dashboard-bonus-redemption-modes">
-                      <p className="text-xs sm:text-[13px] font-semibold text-slate-600">
-                        Two ways to redeem your {totalUnusedText} credit on Step 1 of Send Money:
-                      </p>
-                      <div className="rounded-2xl bg-[#EEF4FF] border border-blue-100/80 p-3.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-0 sm:divide-x sm:divide-slate-200/90">
-                          <button
-                            type="button"
-                            onClick={() => setLocation("/send-money")}
-                            className="text-left sm:pr-3.5 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-blue-700">
-                                <ArrowDownLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                                Pay less
-                              </span>
-                              <span className="rounded-full bg-white/90 border border-blue-200/80 px-2 py-0.5 text-[11px] font-bold text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                Save {totalUnusedText}
-                              </span>
-                            </div>
-                            <p className="mt-1.5 text-xs sm:text-[13px] leading-relaxed text-slate-600">
-                              Deduct <strong className="font-semibold text-slate-900">{totalUnusedText}</strong> straight off the total amount you pay at checkout.
-                            </p>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setLocation("/send-money")}
-                            className="text-left sm:pl-3.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-slate-200/80 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-teal-800">
-                                <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                                Send more
-                              </span>
-                              <span className="rounded-full bg-white/90 border border-teal-200/80 px-2 py-0.5 text-[11px] font-bold text-teal-700 group-hover:bg-teal-700 group-hover:text-white transition-colors">
-                                +{totalUnusedText} extra
-                              </span>
-                            </div>
-                            <p className="mt-1.5 text-xs sm:text-[13px] leading-relaxed text-slate-600">
-                              Add <strong className="font-semibold text-slate-900">{totalUnusedText}</strong> on top so your recipient receives extra at no cost to you.
-                            </p>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Sparkles className="h-4 w-4 text-teal-600 shrink-0" aria-hidden="true" />
+                    <span>
+                      Referral link connected —{" "}
+                      {rewards.data?.offer?.floor && rewards.data.offer.floor > 0
+                        ? `send ${formatMoney(rewards.data.offer.floor, rewards.data.offer.currency || rewardsCurrency)}+ to unlock your friend's reward, or check Reward$ for active offers.`
+                        : "complete a qualifying transfer to unlock your friend's reward, or check Reward$ for active offers."}
+                    </span>
                   </div>
-
-                  <div className="flex flex-col gap-2.5 pt-1" data-testid="dashboard-bonus-footer">
-                    <div className="grid grid-cols-2 gap-2.5" data-testid="dashboard-bonus-stats">
-                      <div className="rounded-xl bg-slate-50 px-3.5 py-2.5">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Total bonus earned
-                        </p>
-                        <p
-                          className="mt-0.5 font-display text-xl font-bold leading-none text-slate-900"
-                          data-testid="dashboard-bonus-total-earned"
-                        >
-                          {totalBonusEarnedText}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-teal-50 px-3.5 py-2.5">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
-                          Saved with rewards
-                        </p>
-                        <p
-                          className="mt-0.5 font-display text-xl font-bold leading-none text-teal-700"
-                          data-testid="dashboard-bonus-total-saved"
-                        >
-                          {totalRewardsSavedText}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-slate-500">
-                        Select your preferred option on Step 1 when sending money
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setLocation("/bonus-discounts")}
-                        className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
-                      >
-                        <span>Manage in Reward$</span>
-                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => setLocation("/bonus-discounts")}
+                      className="font-semibold text-[#2e5bff] hover:text-blue-700 hover:underline cursor-pointer"
+                    >
+                      Details in Reward$
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissedRefereeStrip(true)}
+                      aria-label="Dismiss referral notice"
+                      className="rounded-md p-1 text-teal-700 hover:bg-teal-100 cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
                   </div>
-                </Card>
+                </div>
               )}
+
+              {activeBonusBalance && (() => {
+                const activeCur = activeBonusBalance.currency;
+                const activeAmountText = formatMoney(activeBonusBalance.available, activeCur);
+                const activeUnused = (rewards.data?.wallet.unused ?? []).filter(
+                  (c) => c.currency === activeCur && c.remaining > 0,
+                );
+                const bySource = activeBonusBalance.by_source ?? [];
+                const referralGroup = bySource.find((s) => s.credit_source === "REFERRAL");
+                const schemeGroups = bySource.filter(
+                  (s) => s.credit_source === "SCHEME" || s.credit_source === "MANUAL",
+                );
+                const referralAvailable = referralGroup?.available ?? 0;
+                const schemeAvailable = schemeGroups.reduce((sum, s) => sum + (s.available || 0), 0);
+                const hasSourceSplit = referralAvailable + schemeAvailable > 0;
+
+                const ruleOfferForCur =
+                  rewards.data?.offers?.find((o) => o.currency === activeCur) ??
+                  (rewards.data?.offer?.currency === activeCur || !rewards.data?.offer?.currency
+                    ? rewards.data?.offer
+                    : undefined);
+
+                const resolvedReferralFloor =
+                  referralGroup?.floor ||
+                  ruleOfferForCur?.floor ||
+                  activeUnused.find((c) => c.credit_source === "REFERRAL" && (c.floor ?? 0) > 0)?.floor ||
+                  0;
+
+                const resolvedSchemeFloor = Math.max(
+                  0,
+                  ...schemeGroups.map((s) => s.floor || 0),
+                  ...activeUnused
+                    .filter((c) => c.credit_source !== "REFERRAL")
+                    .map((c) => c.floor || 0),
+                );
+
+                const displayFloor =
+                  referralAvailable > 0 && schemeAvailable === 0
+                    ? resolvedReferralFloor
+                    : schemeAvailable > 0 && referralAvailable === 0
+                      ? resolvedSchemeFloor
+                      : Math.max(resolvedReferralFloor, resolvedSchemeFloor);
+
+                const resolvedReceiveCurrency =
+                  referralGroup?.receive_currency ||
+                  activeUnused.find((c) => c.credit_source === "REFERRAL" && c.receive_currency)
+                    ?.receive_currency ||
+                  ruleOfferForCur?.receive_currency ||
+                  null;
+
+                const referralUnused = activeUnused.filter((c) => c.credit_source === "REFERRAL");
+                const welcomeCredit = referralUnused.find(
+                  (c) =>
+                    c.reason_code === "REFEREE" ||
+                    /^(Welcome bonus|Referee reward)/i.test(
+                      String(c.credit_source_label ?? c.source_label ?? c.source ?? ""),
+                    ),
+                );
+                const rawWelcomeLabel = String(
+                  welcomeCredit?.credit_source_label ??
+                    welcomeCredit?.source_label ??
+                    welcomeCredit?.source ??
+                    "",
+                );
+                const inviterMatch = rawWelcomeLabel.match(/invited by\s+([^()]+?)(?:\)|$)/i);
+                const inviterName = inviterMatch?.[1]?.trim().replace(/\.+$/, "") || "";
+
+                const soonestUrgent = expiringSoon(activeUnused)[0];
+                const urgentDays = soonestUrgent
+                  ? Math.max(0, daysUntil(soonestUrgent.expires_on) ?? 0)
+                  : null;
+                const soonestAny = [...activeUnused]
+                  .filter((c) => Boolean(c.expires_on))
+                  .sort((a, b) => String(a.expires_on).localeCompare(String(b.expires_on)))[0];
+
+                const handleRedeemOnSendMoney = (preferredReward?: "referral" | "bonus") => {
+                  const targetReward =
+                    preferredReward ?? (referralAvailable > 0 ? "referral" : "bonus");
+                  const params = new URLSearchParams();
+                  params.set("reward", targetReward);
+                  if (activeCur && activeCur !== "GBP") {
+                    params.set("currency", activeCur);
+                  }
+                  if (targetReward === "referral" && resolvedReceiveCurrency) {
+                    params.set("to", resolvedReceiveCurrency.toUpperCase());
+                  }
+                  setLocation(`/send-money?${params.toString()}`);
+                };
+
+                return (
+                  <Card
+                    data-testid="rewards-section-bonus-banners"
+                    className="rounded-xl border border-[#87c2fc]/70 border-l-4 border-l-teal-500 bg-white p-4 shadow-2xs"
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      {/* Zone A — What you earned & eligibility guardrails */}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div
+                            data-testid="dashboard-total-unused-bonus"
+                            className="inline-flex items-center gap-2"
+                          >
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50 text-teal-600 shrink-0">
+                              <Gift className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                            <span className="font-display text-xl sm:text-[22px] font-bold tracking-tight text-[#323130] leading-none">
+                              {activeAmountText}
+                            </span>
+                            <span className="text-xs font-semibold text-teal-800">
+                              available
+                            </span>
+                          </div>
+
+                          {displayBonusBalances.length > 1 && (
+                            <div
+                              className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-0.5"
+                              role="group"
+                              aria-label="Bonus currency"
+                            >
+                              {displayBonusBalances.map((bal) => {
+                                const isActive = bal.currency === activeCur;
+                                return (
+                                  <button
+                                    key={bal.currency}
+                                    type="button"
+                                    onClick={() => setSelectedBonusCurrency(bal.currency)}
+                                    className={cn(
+                                      "rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer",
+                                      isActive
+                                        ? "bg-white text-[#323130] shadow-2xs"
+                                        : "text-[#605e5c] hover:text-[#323130]",
+                                    )}
+                                  >
+                                    {bal.currency} {formatMoney(bal.available, bal.currency)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {referralAvailable > 0 && (
+                            <span
+                              data-testid="referral-bonus-earned-pill"
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                welcomeCredit
+                                  ? "border-teal-200 bg-teal-50 text-teal-800"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
+                              )}
+                            >
+                              <span>{welcomeCredit ? "Welcome bonus" : "Referral bonus"}</span>
+                              {schemeAvailable > 0 ? (
+                                <span>· {formatMoney(referralAvailable, activeCur)}</span>
+                              ) : (
+                                <span className="sr-only">
+                                  {" "}
+                                  {formatMoney(referralAvailable, activeCur)}
+                                </span>
+                              )}
+                              {welcomeCredit && inviterName && (
+                                <span className="font-medium text-teal-700">
+                                  · Invited by {inviterName}
+                                </span>
+                              )}
+                              {resolvedReferralFloor > 0 && (
+                                <span className="sr-only">
+                                  {" "}
+                                  Minimum transfer {formatMoney(resolvedReferralFloor, activeCur)}
+                                </span>
+                              )}
+                            </span>
+                          )}
+
+                          {(schemeAvailable > 0 || !hasSourceSplit) && (
+                            <span
+                              data-testid="bonus-earned-pill"
+                              className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-xs font-semibold text-purple-800"
+                            >
+                              <span>Bonus offer</span>
+                              <span className="sr-only"> Bonus credit</span>
+                              {hasSourceSplit && referralAvailable > 0 ? (
+                                <span>· {formatMoney(schemeAvailable, activeCur)}</span>
+                              ) : (
+                                <span className="sr-only">
+                                  {" "}
+                                  {formatMoney(
+                                    hasSourceSplit ? schemeAvailable : activeBonusBalance.available,
+                                    activeCur,
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Inline Guardrail Pills */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-[#323130]">
+                            {displayFloor > 0
+                              ? `Min. transfer ${formatMoney(displayFloor, activeCur)}`
+                              : "No min. transfer"}
+                          </span>
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-[#323130]">
+                            {activeCur} →{" "}
+                            {resolvedReceiveCurrency
+                              ? resolvedReceiveCurrency.toUpperCase()
+                              : "All corridors"}
+                          </span>
+                          {soonestUrgent && urgentDays !== null ? (
+                            <span
+                              data-testid="bonus-pill-expiring"
+                              className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-800"
+                            >
+                              {urgentDays === 0
+                                ? BONUS_COPY.pillExpiringToday(
+                                    formatMoney(soonestUrgent.remaining, soonestUrgent.currency),
+                                  )
+                                : BONUS_COPY.pillExpiring(
+                                    formatMoney(soonestUrgent.remaining, soonestUrgent.currency),
+                                    urgentDays,
+                                  )}
+                            </span>
+                          ) : soonestAny?.expires_on ? (
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-[#605e5c]">
+                              Expires {formatUkDate(soonestAny.expires_on)}
+                            </span>
+                          ) : null}
+                          {referralAvailable > 0 && schemeAvailable > 0 && (
+                            <span className="text-[11px] text-[#605e5c]">
+                              · Soonest-expiring used first
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Zone B — How to redeem it + 1-click CTAs */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between lg:justify-end gap-3 lg:pl-4 lg:border-l lg:border-slate-100">
+                        <div
+                          data-testid="dashboard-bonus-redemption-modes"
+                          className="space-y-1 max-w-md"
+                        >
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-[#87c2fc]/60 bg-[#ecf5ff] px-2.5 py-1 text-xs text-[#323130]">
+                              <ArrowDownLeft
+                                className="h-3.5 w-3.5 text-[#2e5bff] shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span>
+                                <strong className="font-semibold text-[#2e5bff]">Pay less:</strong>{" "}
+                                Deduct {activeAmountText} off what you pay on Step 1
+                              </span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-teal-200/80 bg-teal-50/70 px-2.5 py-1 text-xs text-[#323130]">
+                              <ArrowUpRight
+                                className="h-3.5 w-3.5 text-teal-700 shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span>
+                                <strong className="font-semibold text-teal-800">Send more:</strong>{" "}
+                                Add +{activeAmountText} extra to recipient payout at no extra cost
+                              </span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#605e5c]">
+                            Pick on Step 1 of Send Money (used separately from Promo Codes).
+                          </p>
+                        </div>
+
+                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1.5 shrink-0">
+                          {!rewards.data?.wallet.bonus_blocked && (
+                            <Button
+                              type="button"
+                              data-testid="dashboard-redeem-send-money-cta"
+                              onClick={() => handleRedeemOnSendMoney()}
+                              className="h-9 rounded-full bg-[#2e5bff] hover:bg-blue-700 px-4 text-xs sm:text-[13px] font-semibold text-white shadow-none cursor-pointer"
+                            >
+                              <span>Redeem on Send Money</span>
+                              <ArrowRight className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            </Button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setLocation("/bonus-discounts")}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:text-blue-700 hover:underline cursor-pointer"
+                          >
+                            <span>Details in Reward$</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })()}
 
               <ReferEarnCard
                 offer={rewards.data?.offer ?? null}

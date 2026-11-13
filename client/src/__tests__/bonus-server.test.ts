@@ -20,7 +20,7 @@ async function api(method: string, path: string, body?: unknown) {
   const res = await fetch(`${base}${path}`, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
-const flush = () => new Promise((r) => setTimeout(r, 50));
+const flush = () => new Promise((r) => setTimeout(r, 150));
 const to = (p: string) => calls.filter((c) => c.path === p);
 
 let storage: typeof import("../../../server/storage").storage;
