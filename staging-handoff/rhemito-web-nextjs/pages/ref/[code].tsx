@@ -18,6 +18,7 @@ import {
   clearReferral,
   getOrCreateVisitorId,
   normaliseReferralCode,
+  REFERRAL_CODE_MESSAGE,
   REFERRAL_CODE_REGEX,
   saveReferral,
   type StoredReferralOffer,
@@ -44,10 +45,14 @@ const SYMBOLS: Record<string, string> = {
   EUR: "€",
   NGN: "₦",
   CAD: "C$",
-  GHS: "GH₵",
-  KES: "KSh ",
-  INR: "₹",
+  AUD: "A$",
   JPY: "¥",
+  CNY: "¥",
+  INR: "₹",
+  ZAR: "R",
+  KES: "KSh ",
+  GHS: "GH₵",
+  AED: "AED ",
 };
 
 function formatMoney(amount: number, currency: string): string {
@@ -274,12 +279,12 @@ export default function ReferralLandingPage() {
     const rawTrimmed = String(rawCodeParam || "").trim().toUpperCase();
     const code = normaliseReferralCode(rawTrimmed);
 
-    // 1. Validate code format (`/^[A-Z0-9_-]{3,32}$/`)
+    // 1. Validate code format (`/^[A-Z0-9]{6,16}$/` after stripping non-alphanumerics)
     if (!code || !REFERRAL_CODE_REGEX.test(code)) {
       clearReferral();
       setErrorTitle("Invalid referral link");
       setErrorDetail(
-        "This referral link doesn't look right. Check the link your friend shared or continue signing up directly.",
+        `${REFERRAL_CODE_MESSAGE} Check the link your friend shared or continue signing up directly.`,
       );
       setLoading(false);
       return;
@@ -307,8 +312,16 @@ export default function ReferralLandingPage() {
       setSignedInOnlyError(false);
 
       try {
+        const lookupParams = new URLSearchParams();
+        if (queryTo) {
+          lookupParams.set("receiveCurrency", String(queryTo).trim().toUpperCase());
+        }
+        if (queryRule && Number(queryRule) > 0) {
+          lookupParams.set("ruleId", String(Number(queryRule)));
+        }
+        const lookupQs = lookupParams.toString();
         const lookupBody = await api.get(
-          `Account/Rewards/Code/${encodeURIComponent(code)}`,
+          `Account/Rewards/Code/${encodeURIComponent(code)}${lookupQs ? `?${lookupQs}` : ""}`,
         );
         if (cancelled) return;
 
@@ -323,7 +336,9 @@ export default function ReferralLandingPage() {
             lookupBody,
             "This referral code isn't valid or has expired.",
           );
-          const inactive = msg.toLowerCase().includes("no longer active");
+          const lowerMsg = msg.toLowerCase();
+          const inactive =
+            lowerMsg.includes("no longer active") || lowerMsg.includes("expired");
           setErrorTitle(
             inactive
               ? "This referral link is no longer active"
@@ -402,37 +417,83 @@ export default function ReferralLandingPage() {
         });
         setPlayStoreUrl(defaultPlayUrl);
 
-        // 3. Record visit via `POST Account/Rewards/Visit`
+        // 3. Record visit via `POST Account/Rewards/Visit/Track` first; on 404/405 or non-object `data`,
+        //    fall back to backward-compatible `POST Account/Rewards/Visit` (`data === true` -> tracked with no trackingId).
         if (visitRecordedRef.current !== resolvedCode) {
           visitRecordedRef.current = resolvedCode;
           try {
             const visitPayload: Record<string, unknown> = {
               code: resolvedCode,
               visitorId,
-              deviceType: detectedPlatform === "desktop" ? "desktop" : "mobile",
+              deviceType: detectedPlatform === "desktop" ? "DESKTOP" : "MOBILE",
               operatingSystem:
                 detectedPlatform === "android"
                   ? "Android"
                   : detectedPlatform === "ios"
                     ? "iOS"
                     : "Desktop",
-              sourceChannel: "referral_link",
+              sourceChannel: "LINK",
             };
             if (resolvedReceiveCur) visitPayload.receiveCurrency = resolvedReceiveCur;
             if (resolvedRuleId) visitPayload.ruleId = resolvedRuleId;
 
-            const visitBody = await api.post("Account/Rewards/Visit", {
-              data: visitPayload,
-            });
-            if (!cancelled) {
-              const visitData = apiData(visitBody) || visitBody;
-              const nextTrackingId = strOf(visitData, "trackingId") || null;
-              const nextPlayUrl =
-                strOf(visitData, "playStoreUrl") ||
-                buildGooglePlayReferralUrl(nextTrackingId, resolvedCode);
-              const nextAppUrl =
-                strOf(visitData, "appStoreUrl") || APPLE_APP_STORE_URL;
+            let nextTrackingId: string | null = null;
+            let nextPlayUrl = defaultPlayUrl;
+            let nextAppUrl = APPLE_APP_STORE_URL;
+            let handledByTrackEndpoint = false;
 
+            try {
+              const trackBody = await api.post("Account/Rewards/Visit/Track", {
+                data: visitPayload,
+              });
+              const trackData = apiData(trackBody);
+              if (
+                apiSucceeded(trackBody) &&
+                trackData &&
+                typeof trackData === "object" &&
+                !Array.isArray(trackData)
+              ) {
+                handledByTrackEndpoint = true;
+                if (flagOn(trackData, "tracked", true) !== false) {
+                  nextTrackingId = strOf(trackData, "trackingId") || null;
+                  nextPlayUrl =
+                    strOf(trackData, "playStoreUrl") ||
+                    buildGooglePlayReferralUrl(nextTrackingId, resolvedCode);
+                  nextAppUrl =
+                    strOf(trackData, "appStoreUrl") || APPLE_APP_STORE_URL;
+                }
+              }
+            } catch {
+              // 404/405 or unupgraded server — fall back to `Account/Rewards/Visit`
+            }
+
+            if (!handledByTrackEndpoint) {
+              const visitBody = await api.post("Account/Rewards/Visit", {
+                data: visitPayload,
+              });
+              const visitData = apiData(visitBody);
+              if (visitData === true) {
+                // `Result<bool>` (`data === true`): tracked, no trackingId
+                nextTrackingId = null;
+                nextPlayUrl = buildGooglePlayReferralUrl(null, resolvedCode);
+                nextAppUrl = APPLE_APP_STORE_URL;
+              } else if (
+                visitData &&
+                typeof visitData === "object" &&
+                !Array.isArray(visitData)
+              ) {
+                if (flagOn(visitData, "tracked", true) !== false) {
+                  nextTrackingId = strOf(visitData, "trackingId") || null;
+                  nextPlayUrl =
+                    strOf(visitData, "playStoreUrl") ||
+                    buildGooglePlayReferralUrl(nextTrackingId, resolvedCode);
+                  nextAppUrl =
+                    strOf(visitData, "appStoreUrl") || APPLE_APP_STORE_URL;
+                }
+              }
+            }
+
+            if (!cancelled) {
               setTrackingId(nextTrackingId);
               setPlayStoreUrl(nextPlayUrl);
               setAppStoreUrl(nextAppUrl);

@@ -306,8 +306,9 @@ export default function SendMoney() {
     const parsedSearch = new URLSearchParams(
         searchParams || (typeof window !== "undefined" ? window.location.search : ""),
     );
-    const initialRewardParam = parsedSearch.get("reward");
+    const initialRewardParam = parsedSearch.get("reward")?.toLowerCase() ?? null;
     const initialCurrencyParam = parsedSearch.get("currency")?.toUpperCase();
+    const initialToParam = parsedSearch.get("to")?.toUpperCase();
     const { toast } = useToast();
     const { upsertRecipient } = useContacts();
     const queryClient = useQueryClient();
@@ -315,7 +316,7 @@ export default function SendMoney() {
 
     // Form State
     const [sendCurrencyState, setSendCurrencyState] = useState<string>(
-        initialCurrencyParam && ["GBP", "USD", "EUR"].includes(initialCurrencyParam)
+        initialCurrencyParam && Object.prototype.hasOwnProperty.call(CURRENCY_TO_COUNTRY_INFO, initialCurrencyParam)
             ? initialCurrencyParam
             : "GBP",
     );
@@ -358,8 +359,11 @@ export default function SendMoney() {
         ifsc: "",
         bsbCode: "",
         branchCode: "",
-        currency: "NGN",
-        country: "Nigeria",
+        currency: initialToParam && RECEIVE_CURRENCIES.includes(initialToParam) ? initialToParam : "NGN",
+        country:
+            initialToParam && RECEIVE_CURRENCIES.includes(initialToParam)
+                ? CURRENCY_TO_COUNTRY_INFO[initialToParam]?.country || "Nigeria"
+                : "Nigeria",
         narration: ""
     });
 
@@ -918,6 +922,13 @@ export default function SendMoney() {
         }
     }, [applyPaymentOutcome]);
 
+    const pendingKycRewardRestoreRef = useRef<{
+        bonusChoice?: "none" | "pay_less" | "send_more";
+        activeRewardTab?: "referral" | "bonus";
+        bonusPanelOpen?: boolean;
+        promoCode?: string;
+    } | null>(null);
+
     // Restore pending transfer context when returning from Mini / Full / Extended KYC (/kyc)
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -930,6 +941,21 @@ export default function SendMoney() {
                 sessionStorage.removeItem("rhemito_kyc_cancelled");
                 localStorage.removeItem("kyc_context");
                 const ctx = JSON.parse(rawCtx) as Record<string, any>;
+                pendingKycRewardRestoreRef.current = {
+                    bonusChoice:
+                        ctx.bonusChoice === "pay_less" || ctx.bonusChoice === "send_more" || ctx.bonusChoice === "none"
+                            ? ctx.bonusChoice
+                            : undefined,
+                    activeRewardTab:
+                        ctx.activeRewardTab === "referral" || ctx.activeRewardTab === "bonus"
+                            ? ctx.activeRewardTab
+                            : undefined,
+                    bonusPanelOpen: typeof ctx.bonusPanelOpen === "boolean" ? ctx.bonusPanelOpen : undefined,
+                    promoCode:
+                        typeof ctx.promoCode === "string" && ctx.promoCode.trim()
+                            ? ctx.promoCode.trim()
+                            : undefined,
+                };
                 const restoredAmount = typeof ctx.amount === "string" ? ctx.amount : "100";
                 const restoredSendCur = typeof ctx.sendCurrencyState === "string" ? ctx.sendCurrencyState : "GBP";
                 const restoredRecvCur = typeof ctx.receiveCurrency === "string" ? ctx.receiveCurrency : "NGN";
@@ -1104,6 +1130,11 @@ export default function SendMoney() {
     const [activeRewardTab, setActiveRewardTab] = useState<"referral" | "bonus">(
         initialRewardParam === "bonus" ? "bonus" : "referral",
     );
+    const userDismissedBonusPanelRef = useRef(false);
+    const hasExplicitRewardTabRef = useRef(
+        initialRewardParam === "referral" || initialRewardParam === "bonus",
+    );
+    const pendingPromoAutoApplyRef = useRef<string | null>(null);
 
     // Referral bonus — live wallet from the rewards API (US-5.2 / US-5.3)
     const rewards = useRewards();
@@ -1117,19 +1148,48 @@ export default function SendMoney() {
         (rewards.data?.offer?.currency === SEND_CURRENCY ? rewards.data?.offer : rewards.data?.offer);
     // One bonus balance, in the currency of this transfer; no minimum to use it (BONUS-RHEMITO 7.5)
     const bonusWallet = balanceFor(rewards.data?.wallet, SEND_CURRENCY);
+    const walletBySource = bonusWallet.by_source ?? [];
+    const referralSourceAvailable =
+        walletBySource.length > 0
+            ? walletBySource.find((s) => s.credit_source === "REFERRAL")?.available ?? 0
+            : bonusWallet.referral_credit_count > 0
+              ? bonusWallet.available
+              : 0;
+    const bonusSchemeSourceAvailable =
+        walletBySource.length > 0
+            ? walletBySource
+                  .filter((s) => s.credit_source === "SCHEME" || s.credit_source === "MANUAL")
+                  .reduce((sum, s) => sum + (s.available || 0), 0)
+            : bonusWallet.other_credit_count > 0 && bonusWallet.referral_credit_count === 0
+              ? bonusWallet.available
+              : 0;
+    const hasOtherCurrencyReferralUnused = (rewards.data?.wallet.unused ?? []).some(
+        (c) => c.credit_source === "REFERRAL" && c.remaining > 0 && c.currency !== SEND_CURRENCY,
+    );
 
     useEffect(() => {
         const qs = new URLSearchParams(
             searchParams || (typeof window !== "undefined" ? window.location.search : ""),
         );
-        const rewardParam = qs.get("reward");
+        const rewardParam = qs.get("reward")?.toLowerCase();
         const curParam = qs.get("currency")?.toUpperCase();
+        const toParam = qs.get("to")?.toUpperCase();
         if (rewardParam === "referral" || rewardParam === "bonus") {
+            hasExplicitRewardTabRef.current = true;
+            userDismissedBonusPanelRef.current = false;
             setActiveRewardTab(rewardParam);
             setBonusPanelOpen(true);
         }
-        if (curParam && ["GBP", "USD", "EUR"].includes(curParam)) {
+        if (curParam && Object.prototype.hasOwnProperty.call(CURRENCY_TO_COUNTRY_INFO, curParam)) {
             setSendCurrencyState(curParam);
+        }
+        if (toParam && RECEIVE_CURRENCIES.includes(toParam)) {
+            const nextCountry = CURRENCY_TO_COUNTRY_INFO[toParam]?.country || "Nigeria";
+            setRecipientDetails((prev) => ({
+                ...prev,
+                currency: toParam,
+                country: nextCountry,
+            }));
         }
     }, [searchParams]);
     const bonusBalance = eligibleBonusBalance(
@@ -1145,10 +1205,11 @@ export default function SendMoney() {
     const bonusType: 'pay_less' | 'send_more' = bonusChoice === "send_more" ? "send_more" : "pay_less";
 
     useEffect(() => {
+        if (rewards.isLoading || !rewards.data) return;
         if (bonusChoice !== "none" && bonusBalance <= 0) {
             setBonusChoiceState("none");
         }
-    }, [bonusBalance, bonusChoice]);
+    }, [bonusBalance, bonusChoice, rewards.isLoading, rewards.data]);
 
     // Calculations
     const fee = parseFloat(amount || "0") * FEE_PERCENTAGE;
@@ -1167,6 +1228,61 @@ export default function SendMoney() {
             setBonusChoiceState("none");
         }
     }, [promoApplied, bonusChoice]);
+
+    // Restore reward/promo selections saved prior to a KYC redirect
+    useEffect(() => {
+        const restored = pendingKycRewardRestoreRef.current;
+        if (!restored) return;
+        pendingKycRewardRestoreRef.current = null;
+        if (restored.activeRewardTab === "referral" || restored.activeRewardTab === "bonus") {
+            hasExplicitRewardTabRef.current = true;
+            setActiveRewardTab(restored.activeRewardTab);
+        }
+        if (typeof restored.bonusPanelOpen === "boolean") {
+            if (!restored.bonusPanelOpen && (!restored.bonusChoice || restored.bonusChoice === "none")) {
+                userDismissedBonusPanelRef.current = true;
+            }
+            setBonusPanelOpen(restored.bonusPanelOpen);
+        }
+        if (restored.bonusChoice === "pay_less" || restored.bonusChoice === "send_more") {
+            userDismissedBonusPanelRef.current = false;
+            setBonusPanelOpen(true);
+            setBonusChoiceState(restored.bonusChoice);
+        }
+        if (restored.promoCode) {
+            pendingPromoAutoApplyRef.current = restored.promoCode.toUpperCase();
+            promo.setCode(restored.promoCode);
+        }
+    }, [promo]);
+
+    useEffect(() => {
+        const target = pendingPromoAutoApplyRef.current;
+        if (!target || promo.code !== target) return;
+        pendingPromoAutoApplyRef.current = null;
+        void promo.apply();
+    }, [promo.code, promo.apply]);
+
+    // Auto-surface earned bonus/referral credit on Step 1 & Step 4 once wallet loads (without pre-selecting a choice)
+    useEffect(() => {
+        if (!rewards.data || promoApplied || userDismissedBonusPanelRef.current) return;
+        const hasCredit = bonusWallet.available > 0 || hasOtherCurrencyReferralUnused;
+        if (!hasCredit) return;
+        if (!hasExplicitRewardTabRef.current) {
+            if (referralSourceAvailable > 0 || (bonusWallet.available <= 0 && hasOtherCurrencyReferralUnused)) {
+                setActiveRewardTab("referral");
+            } else if (bonusSchemeSourceAvailable > 0) {
+                setActiveRewardTab("bonus");
+            }
+        }
+        setBonusPanelOpen(true);
+    }, [
+        rewards.data,
+        promoApplied,
+        bonusWallet.available,
+        hasOtherCurrencyReferralUnused,
+        referralSourceAvailable,
+        bonusSchemeSourceAvailable,
+    ]);
     const promoDiscount = promo.discount;
     const promoCode = promo.appliedCode ?? "";
     const promoOnAmount = promoApplied && promo.appliesTo === "amount";
@@ -1818,6 +1934,10 @@ export default function SendMoney() {
                                 deliveryMethod,
                                 providerId: activeProviderId,
                                 lockedRateId: validated?.rateId || affiliateRateId,
+                                bonusChoice,
+                                activeRewardTab,
+                                bonusPanelOpen,
+                                promoCode: promoApplied ? promoCode : undefined,
                             }),
                         );
                     } catch {
@@ -2364,6 +2484,8 @@ export default function SendMoney() {
                                                     title={promoApplied || (useBonus && activeRewardTab === "bonus") ? "You can only use one reward at a time" : undefined}
                                                     onClick={() => {
                                                         if (activeRewardTab !== "referral") setBonusChoiceState("none");
+                                                        hasExplicitRewardTabRef.current = true;
+                                                        userDismissedBonusPanelRef.current = false;
                                                         setActiveRewardTab("referral");
                                                         setBonusPanelOpen(true);
                                                     }}
@@ -2378,6 +2500,8 @@ export default function SendMoney() {
                                                     title={promoApplied || (useBonus && activeRewardTab === "referral") ? "You can only use one reward at a time" : undefined}
                                                     onClick={() => {
                                                         if (activeRewardTab !== "bonus") setBonusChoiceState("none");
+                                                        hasExplicitRewardTabRef.current = true;
+                                                        userDismissedBonusPanelRef.current = false;
                                                         setActiveRewardTab("bonus");
                                                         setBonusPanelOpen(true);
                                                     }}
@@ -2715,7 +2839,10 @@ export default function SendMoney() {
                                             exchangeRate={EXCHANGE_RATE}
                                             choice={bonusChoice}
                                             onChoice={setBonusChoice}
-                                            onClose={() => setBonusPanelOpen(false)}
+                                            onClose={() => {
+                                                userDismissedBonusPanelRef.current = true;
+                                                setBonusPanelOpen(false);
+                                            }}
                                             activeTab={activeRewardTab}
                                             blocked={rewards.data?.wallet.bonus_blocked}
                                             referralFloor={activeOffer?.floor}
@@ -4107,6 +4234,132 @@ export default function SendMoney() {
                                                 <X className="w-4 h-4" />
                                             </button>
                                         </div>
+                                    )}
+
+                                    {/* Shared Rewards & Discounts Selector on Step 4 (post-KYC / post-Add Beneficiary) */}
+                                    {!paymentOutcome && !mitoCardPaymentSession && (
+                                        <Card data-testid="step4-rewards-card" className="border-slate-200/90 shadow-2xs">
+                                            <CardContent className="p-4 sm:p-5 space-y-3.5">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="space-y-0.5">
+                                                        <h3 className="text-sm font-semibold text-gray-900">Rewards &amp; Discounts</h3>
+                                                        {promoApplied || useBonus ? (
+                                                            <p className="text-[11px] font-medium text-slate-500" data-testid="step4-one-reward-note">
+                                                                You can only use one reward at a time.
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-[11px] text-slate-500">
+                                                                Apply a promo code, referral credit, or bonus before paying.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        {promo.enabled && (
+                                                            promoApplied ? (
+                                                                <div
+                                                                    className="inline-flex items-center gap-2 h-7 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-3 rounded-full shadow-2xs"
+                                                                    data-testid="step4-promo-applied-pill"
+                                                                >
+                                                                    <Check className="w-3.5 h-3.5 text-green-600" />
+                                                                    <span>
+                                                                        Promo <strong className="font-mono">{promoCode}</strong> (−{formatPromoMoney(promoDiscount, SEND_CURRENCY).replace(/^−/, "")})
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShowPromoModal(true)}
+                                                                        className="text-blue-600 hover:underline ml-1"
+                                                                    >
+                                                                        Change
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={promo.remove}
+                                                                        className="text-gray-500 hover:text-red-600 ml-0.5"
+                                                                        aria-label="Remove promo code"
+                                                                    >
+                                                                        <X className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={useBonus}
+                                                                    title={useBonus ? "You can only use one reward at a time" : undefined}
+                                                                    onClick={() => setShowPromoModal(true)}
+                                                                    data-testid="step4-use-promo-btn"
+                                                                    className={`inline-flex items-center gap-1.5 h-7 text-xs font-semibold px-3 rounded-full shadow-2xs transition-all ${useBonus ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed" : "text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 border border-blue-200/80 cursor-pointer"}`}
+                                                                >
+                                                                    <span>🏷️ Use Promo Code</span>
+                                                                </button>
+                                                            )
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            disabled={promoApplied || (useBonus && activeRewardTab === "bonus")}
+                                                            title={promoApplied || (useBonus && activeRewardTab === "bonus") ? "You can only use one reward at a time" : undefined}
+                                                            onClick={() => {
+                                                                if (activeRewardTab !== "referral") setBonusChoiceState("none");
+                                                                hasExplicitRewardTabRef.current = true;
+                                                                userDismissedBonusPanelRef.current = false;
+                                                                setActiveRewardTab("referral");
+                                                                setBonusPanelOpen(true);
+                                                            }}
+                                                            data-testid="step4-use-referral-btn"
+                                                            className={`inline-flex items-center gap-1.5 h-7 text-xs font-semibold px-3 rounded-full shadow-2xs transition-all ${promoApplied || (useBonus && activeRewardTab === "bonus") ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed" : activeRewardTab === "referral" && bonusPanelOpen ? "bg-teal-600 text-white border border-teal-600 cursor-pointer" : "text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100/80 border border-teal-200/80 cursor-pointer"}`}
+                                                        >
+                                                            <span>
+                                                                🎁 Use Referral
+                                                                {referralSourceAvailable > 0
+                                                                    ? ` · ${formatMoney(referralSourceAvailable, SEND_CURRENCY)}`
+                                                                    : ""}
+                                                            </span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={promoApplied || (useBonus && activeRewardTab === "referral")}
+                                                            title={promoApplied || (useBonus && activeRewardTab === "referral") ? "You can only use one reward at a time" : undefined}
+                                                            onClick={() => {
+                                                                if (activeRewardTab !== "bonus") setBonusChoiceState("none");
+                                                                hasExplicitRewardTabRef.current = true;
+                                                                userDismissedBonusPanelRef.current = false;
+                                                                setActiveRewardTab("bonus");
+                                                                setBonusPanelOpen(true);
+                                                            }}
+                                                            data-testid="step4-use-bonus-btn"
+                                                            className={`inline-flex items-center gap-1.5 h-7 text-xs font-semibold px-3 rounded-full shadow-2xs transition-all ${promoApplied || (useBonus && activeRewardTab === "referral") ? "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed" : activeRewardTab === "bonus" && bonusPanelOpen ? "bg-indigo-600 text-white border border-indigo-600 cursor-pointer" : "text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200/80 cursor-pointer"}`}
+                                                        >
+                                                            <span>
+                                                                ✨ Use Bonus
+                                                                {bonusSchemeSourceAvailable > 0
+                                                                    ? ` · ${formatMoney(bonusSchemeSourceAvailable, SEND_CURRENCY)}`
+                                                                    : ""}
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {bonusPanelOpen && !promoApplied && (
+                                                    <UseBonusCredit
+                                                        balance={bonusWallet}
+                                                        unused={rewards.data?.wallet.unused}
+                                                        currency={SEND_CURRENCY}
+                                                        sendAmount={parseFloat(amount || "0")}
+                                                        receiveCurrency={recipientDetails.currency || "NGN"}
+                                                        exchangeRate={EXCHANGE_RATE}
+                                                        choice={bonusChoice}
+                                                        onChoice={setBonusChoice}
+                                                        onClose={() => {
+                                                            userDismissedBonusPanelRef.current = true;
+                                                            setBonusPanelOpen(false);
+                                                        }}
+                                                        activeTab={activeRewardTab}
+                                                        blocked={rewards.data?.wallet.bonus_blocked}
+                                                        referralFloor={activeOffer?.floor}
+                                                        referralReceiveCurrency={activeOffer?.receive_currency}
+                                                    />
+                                                )}
+                                            </CardContent>
+                                        </Card>
                                     )}
 
                                     {/* Payment Outcome Full-Page Status View OR Payment Method Selection */}

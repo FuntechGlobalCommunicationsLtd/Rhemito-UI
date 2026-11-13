@@ -24,9 +24,17 @@ interface ClientConfig {
   prod: Config;
 }
 
-const STAGING_API_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://furp02-staging.funtechcom.com/api/v1/";
+function normaliseFurpV1ApiUrl(rawUrl?: string): string {
+  const trimmed = String(rawUrl || "https://furp02-staging.funtechcom.com/")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/api\/v1$/i, "")
+    .replace(/\/api$/i, "")
+    .replace(/\/+$/, "");
+  return `${trimmed}/api/v1/`;
+}
+
+const STAGING_API_URL = normaliseFurpV1ApiUrl(process.env.NEXT_PUBLIC_API_URL);
 
 const STAGING_API_KEY =
   process.env.NEXT_PUBLIC_API_KEY ||

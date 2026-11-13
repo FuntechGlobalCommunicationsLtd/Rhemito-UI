@@ -32,19 +32,38 @@ export function flagOn(source: any, name: string, fallback = false): boolean {
   return fallback;
 }
 
-function normaliseKindKey(raw: unknown): string {
+export function normaliseRewardKindKey(raw: unknown): string {
   const norm = String(raw || "")
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
-  if (norm === "BONUSSCHEME" || norm === "SCHEME") return "BONUS_SCHEME";
-  if (norm === "PROMOCODE" || norm === "PROMO_CODE") return "PROMO";
+  if (
+    norm === "BONUS" ||
+    norm === "BONUSSCHEME" ||
+    norm === "SCHEME" ||
+    norm === "BONUS_SCHEMES"
+  ) {
+    return "BONUS_SCHEME";
+  }
+  if (
+    norm === "PROMOCODE" ||
+    norm === "PROMO_CODE" ||
+    norm === "PROMOS" ||
+    norm === "PROMO_CODES"
+  ) {
+    return "PROMO";
+  }
+  if (norm === "REFERRALS" || norm === "REFER_AND_EARN") {
+    return "REFERRAL";
+  }
   return norm;
 }
 
 /**
  * Evaluates the top-level `enabled` flag and per-kind catalogue flags (`referral`, `promo`, `bonusScheme`)
  * from an `Account/Rewards` response (either wrapped or unwrapped).
+ * Supports `kinds` as an object array (`[{ kind, enabled }]`), a string array (`["REFERRAL", "BONUS", "PROMO"]`
+ * where presence means enabled and `"BONUS"` maps to `"BONUS_SCHEME"`), or an object map.
  */
 export function evaluateRewardsGate(bodyOrData: any): RewardsGateState {
   const data = apiData(bodyOrData) || bodyOrData;
@@ -72,10 +91,15 @@ export function evaluateRewardsGate(bodyOrData: any): RewardsGateState {
   const kinds = apiField<any>(data, "kinds");
   if (Array.isArray(kinds) && kinds.length > 0) {
     const findKind = (target: RewardKindKey): boolean => {
-      const match = kinds.find(
-        (row: any) => normaliseKindKey(apiField(row, "kind")) === target,
-      );
-      return match ? masterEnabled && flagOn(match, "enabled", true) : false;
+      const match = kinds.find((row: any) => {
+        if (typeof row === "string") {
+          return normaliseRewardKindKey(row) === target;
+        }
+        return normaliseRewardKindKey(apiField(row, "kind")) === target;
+      });
+      if (match === undefined) return false;
+      if (typeof match === "string") return masterEnabled;
+      return masterEnabled && flagOn(match, "enabled", true);
     };
     referral = findKind("REFERRAL");
     promo = findKind("PROMO");
@@ -84,7 +108,12 @@ export function evaluateRewardsGate(bodyOrData: any): RewardsGateState {
     // Supports object-shaped `{ referral: boolean, promo: boolean, bonusScheme: boolean }`
     referral = masterEnabled && flagOn(kinds, "referral", true);
     promo = masterEnabled && flagOn(kinds, "promo", true);
-    bonusScheme = masterEnabled && flagOn(kinds, "bonusScheme", true);
+    const hasBonusSchemeKey = apiField(kinds, "bonusScheme") !== undefined;
+    bonusScheme =
+      masterEnabled &&
+      (hasBonusSchemeKey
+        ? flagOn(kinds, "bonusScheme", true)
+        : flagOn(kinds, "bonus", true));
   }
 
   return {
@@ -103,4 +132,28 @@ export function isRewardKindEnabled(bodyOrData: any, kind: RewardKindKey): boole
   if (kind === "REFERRAL") return gate.referral;
   if (kind === "PROMO") return gate.promo;
   return gate.bonusScheme;
+}
+
+/**
+ * Checks whether the Rewards UI surface is enabled (honouring both optional
+ * `NEXT_PUBLIC_REWARDS_UI_ENABLED` / `NEXT_PUBLIC_ENABLE_REWARDS` env kill-switches
+ * and, when provided, the `GET Account/Rewards` programme gate).
+ */
+export function isRewardsUiEnabled(bodyOrData?: any): boolean {
+  if (typeof process !== "undefined" && process.env) {
+    const rawEnv =
+      process.env.NEXT_PUBLIC_REWARDS_UI_ENABLED ??
+      process.env.NEXT_PUBLIC_ENABLE_REWARDS;
+    if (typeof rawEnv === "string" && rawEnv.trim() !== "") {
+      const norm = rawEnv.trim().toLowerCase();
+      if (norm === "false" || norm === "0" || norm === "no" || norm === "off") {
+        return false;
+      }
+    }
+  }
+  if (bodyOrData === undefined || bodyOrData === null) {
+    return true;
+  }
+  const gate = evaluateRewardsGate(bodyOrData);
+  return gate.enabled && !gate.unavailable;
 }

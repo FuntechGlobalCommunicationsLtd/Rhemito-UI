@@ -1677,11 +1677,24 @@ export function registerSendMoneyRoutes(app: Express): void {
         return res.json({ data: toView(reUpdated) });
       }
 
+      // If the customer switched from a Step-1 promo code to a Step-4 bonus credit, drop the draft promo
+      const switchedPromoToBonus = Boolean(tx.promoCode && parsed.data.bonusCredit && !parsed.data.promoCode);
+      const effectiveTx: SendMoneyTransaction = switchedPromoToBonus
+        ? {
+            ...tx,
+            promoCode: null,
+            promoDiscountMinor: null,
+            promoAppliesTo: undefined,
+            feeMinor: tx.feeBeforePromoMinor ?? tx.feeMinor,
+            feeBeforePromoMinor: null,
+          }
+        : tx;
+
       // Promo codes belong to Mito Money: the code is re-checked for this customer and payment method and its use
       // recorded once (against the transfer reference) before any money moves (PROMO-RHEMITO P-20 – P-25).
       let promoAtPayment: promo.PromoAtPayment | null = null;
       try {
-        promoAtPayment = await promo.applyForPayment(tx, userId, parsed.data.paymentMethod, { code: parsed.data.promoCode, shownDiscount: parsed.data.promoDiscount });
+        promoAtPayment = await promo.applyForPayment(effectiveTx, userId, parsed.data.paymentMethod, { code: parsed.data.promoCode, shownDiscount: parsed.data.promoDiscount });
       } catch (err) {
         if (err instanceof promo.PromoPaymentError) throw new SendMoneyError(err.status, err.code, err.message);
         throw err;
@@ -1690,7 +1703,7 @@ export function registerSendMoneyRoutes(app: Express): void {
       // (BONUS-RHEMITO B-20 – B-23). If it fails, the promo use taken above is given back and the transfer stays unpaid.
       let bonusAtPayment: bonus.BonusAtPayment | null = null;
       try {
-        bonusAtPayment = await bonus.applyForPayment(tx, userId, parsed.data.bonusCredit);
+        bonusAtPayment = await bonus.applyForPayment(effectiveTx, userId, parsed.data.bonusCredit);
       } catch (err) {
         if (promoAtPayment) await promo.releaseForPayment(tx.reference);
         if (err instanceof bonus.BonusPaymentError) throw new SendMoneyError(err.status, err.code, err.message);
@@ -1699,29 +1712,49 @@ export function registerSendMoneyRoutes(app: Express): void {
 
       // Submit Transaction in Mito Retail Sandbox on Step 4 Payment (POST /api/v1/Transaction/SendMoney)
       const mitoSendPatch = await sendMitoForSendMoneyTx(
-        tx,
+        effectiveTx,
         userId,
         parsed.data.paymentMethod,
-        promoAtPayment?.promoCode ?? tx.promoCode,
+        promoAtPayment?.promoCode ?? effectiveTx.promoCode,
         bonusAtPayment ? Number(fromMinorUnits(bonusAtPayment.amountMinor, tx.sendCurrency)) : null,
         req,
         promoAtPayment,
         bonusAtPayment,
       );
       const mitoPatch = {
-        ...(tx.mitoTransactionId ? {} : await initiateHostedForSendMoneyTx(tx, userId, req)),
+        ...(tx.mitoTransactionId ? {} : await initiateHostedForSendMoneyTx(effectiveTx, userId, req)),
         ...mitoSendPatch,
       };
 
       const status = statusForPaymentMethod(parsed.data.paymentMethod);
       const now = new Date();
+      const receiveAmountPatch: Partial<SendMoneyTransaction> = (() => {
+        const rateNum = Number(tx.exchangeRate);
+        if (!Number.isFinite(rateNum) || rateNum <= 0) return {};
+        const extraMinor = bonusAtPayment?.mode === "send_more" && bonusAtPayment.amountMinor > 0 ? bonusAtPayment.amountMinor : 0;
+        const decimals = tx.receiveCurrency.toUpperCase() === "JPY" ? 0 : 2;
+        const expectedReceiveMinor = toMinorUnits(
+          (Number(fromMinorUnits(tx.sendAmountMinor + extraMinor, tx.sendCurrency)) * rateNum).toFixed(decimals),
+          tx.receiveCurrency,
+        );
+        if (extraMinor === 0 && tx.receiveAmountMinor === expectedReceiveMinor) return {};
+        // Update when send_more is chosen on Step 4 OR when Step 1 send_more was switched to pay_less/none on Step 4
+        if (extraMinor > 0 || tx.receiveAmountMinor > expectedReceiveMinor) {
+          return { receiveAmountMinor: expectedReceiveMinor };
+        }
+        return {};
+      })();
       let updated: SendMoneyTransaction | undefined;
       try {
         updated = await storage.updateSendMoneyTransaction(tx.id, {
           ...mitoPatch,
+          ...receiveAmountPatch,
           paymentMethod: parsed.data.paymentMethod,
           status,
           paidAt: status === "completed" ? now : null,
+          ...(switchedPromoToBonus
+            ? { promoCode: null, feeBeforePromoMinor: null, feeMinor: effectiveTx.feeMinor, promoDiscountMinor: null, promoAppliesTo: undefined }
+            : {}),
           ...(promoAtPayment
             ? { promoCode: promoAtPayment.promoCode, feeBeforePromoMinor: promoAtPayment.feeBeforePromoMinor, feeMinor: promoAtPayment.feeMinor, promoDiscountMinor: promoAtPayment.promoDiscountMinor, ...(promoAtPayment.promoAppliesTo === "amount" ? { promoAppliesTo: "amount" as const } : {}), promoRedeemedAt: now }
             : {}),

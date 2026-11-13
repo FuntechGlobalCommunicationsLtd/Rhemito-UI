@@ -27,18 +27,20 @@ From the `Rhemito-UI` repository root, copy the following files into your local 
 | Source (`Rhemito-UI/staging-handoff/rhemito-web-nextjs/`) | Destination (`Rhemito-web/` on `staging_next_js`) | Purpose |
 | :--- | :--- | :--- |
 | `utils/apiResult.ts` | `utils/apiResult.ts` | Envelope helpers (`apiData`, `apiField`, `apiSucceeded`, `apiMessage`) — missing on `staging_next_js`. |
-| `utils/referralStore.ts` | `utils/referralStore.ts` | 30-day browser attribution store (`saveReferral`, `readReferral`, `readReferralForUser`, `bindReferralEmail`, `clearReferral`, `getOrCreateVisitorId` + `prod_main` aliases). |
-| `utils/promoCodeDraft.ts` | `utils/promoCodeDraft.ts` | 24h promo code draft handoff (`savePromoDraft`, `readPromoDraft`, `clearPromoDraft` + `prod_main` aliases). |
-| `utils/rewardsGate.ts` | `utils/rewardsGate.ts` | Evaluates `enabled` & `kinds` flags (`REFERRAL`, `PROMO`, `BONUS_SCHEME`) from `Account/Rewards`. |
-| `pages/ref/[code].tsx` | `pages/ref/[code].tsx` | Public referral landing page: validates code, guards signed-in users, calls `Account/Rewards/Visit`, and branches Desktop / Android / iOS. |
+| `utils/referralStore.ts` | `utils/referralStore.ts` | 30-day browser attribution store (`^[A-Z0-9]{6,16}$`, alphanumeric normalisation, currency-suffixed `referralCodeForCurrency`, Play ID `com.funtechcom.rhemito`, App Store ID `id1494717263` + `prod_main` aliases). |
+| `utils/promoCodeDraft.ts` | `utils/promoCodeDraft.ts` | 24h promo code draft handoff (`^[A-Z0-9-]{1,20}$`, `appliesTo`, `savePromoDraft`, `readPromoDraft`, `clearPromoDraft` + `prod_main` aliases). |
+| `utils/rewardsGate.ts` | `utils/rewardsGate.ts` | Evaluates `enabled` & `kinds` flags (`REFERRAL`, `PROMO`, `BONUS_SCHEME` — accepts both object arrays and string arrays with `"BONUS"` → `"BONUS_SCHEME"`, plus `isRewardsUiEnabled` gate helper). |
+| `pages/ref/[code].tsx` | `pages/ref/[code].tsx` | Public referral landing page: validates `^[A-Z0-9]{6,16}$` (incl. currency-suffixed codes), guards signed-in users, calls `POST Account/Rewards/Visit/Track` (`sourceChannel: "LINK"`, `deviceType: "DESKTOP"\|"MOBILE"`) with fallback to `POST Account/Rewards/Visit`, and branches Desktop / Android / iOS. |
 | `pages/refer/[code].tsx` | `pages/refer/[code].tsx` | Public alias route re-exporting `pages/ref/[code].tsx`. |
-| `pages/rewards/index.tsx` | `pages/rewards/index.tsx` | Upgraded `Reward$` hub: multi-currency offer switcher, dynamic `${window.location.origin}/ref/${code}`, `capReached` hide/badge (`AC-2.1.6`), 14-day expiry warning pill, and 3-step referral progress stepper. |
-| `components/transactions/payment-methods/RewardAtPayment.tsx` | `components/transactions/payment-methods/RewardAtPayment.tsx` | Upgraded checkout widget: `REDUCE_SEND` vs `INCREASE_RECEIVE` Chakra `RadioGroup`, post-promo bonus cap (`postPromoPayable - minPayableFloor`), partial bonus input, floor/corridor warnings, 400ms debounce, and `locked` submit freeze. |
-| `patches/middleware.ts` | `middleware.ts` | Skips `www.` redirect on `localhost` and `*.herokuapp.com` (fixes Heroku SSL error), preserves `?ref=`/`?to=`/`?rule=` query strings on all redirects, and marks `/rewards` `Cache-Control: no-store, private` while keeping `/ref/` & `/refer/` public. |
-| `patches/clientConfig.staging-example.ts` | `clientConfig.ts` | Points `dev` (`NEXT_PUBLIC__ENV=dev`) to `https://furp02-staging.funtechcom.com/api/v1/` and Sandbox Checkout.com while keeping `prod` (`NEXT_PUBLIC__ENV=prod`) pointed at Live. |
+| `pages/rewards/index.tsx` | `pages/rewards/index.tsx` | Upgraded `Reward$` hub: interactive corridor switcher pills, currency-suffixed share links (`referralCodeForCurrency`), updated Refer & Earn reward breakdown, `"New offer: Refer & Earn"` banner, `capReached` hide/badge (`AC-2.1.6`), 14-day expiry warning pill, and 3-step referral progress stepper. |
+| `components/overview/EarnedRewardsBanner.tsx` | `components/overview/EarnedRewardsBanner.tsx` | Compact `/overview` Earned Bonus & Quick Redeem card: hydrates from `GET Account/Rewards` (re-fetching automatically on `"rhemito:rewards-linked"`), hides at zero balance, and surfaces `Welcome bonus` + inviter attribution, min transfer floor, corridor, 14-day expiry urgency badge, and Payment-step redemption guidance + CTA. |
+| `components/transactions/payment-methods/RewardAtPayment.tsx` | `components/transactions/payment-methods/RewardAtPayment.tsx` | Upgraded checkout widget: `REDUCE_SEND` vs `INCREASE_RECEIVE` Chakra `RadioGroup`, `FixedAmount` (`appliesTo === "amount"`) transfer-amount discount display, post-promo bonus cap (`postPromoPayable - minPayableFloor`), partial bonus input, floor/corridor warnings, 400ms debounce, and `locked` submit freeze. |
+| `patches/middleware.ts` | `middleware.ts` (**Diff & Merge — NEVER overwrite blindly**) | Reference patch: skips `www.` redirect on `localhost` and `*.herokuapp.com` (fixes Heroku SSL error), preserves `?ref=`/`?to=`/`?rule=` query strings on all redirects, and marks `/rewards` `Cache-Control: no-store, private` while keeping `/ref/` & `/refer/` public. |
+| `patches/clientConfig.staging-example.ts` | `clientConfig.ts` (**Diff & Merge — NEVER overwrite blindly**) | Reference patch: points `dev` (`NEXT_PUBLIC__ENV=dev`) to `https://furp02-staging.funtechcom.com/api/v1/` and Sandbox Checkout.com while keeping `prod` (`NEXT_PUBLIC__ENV=prod`) pointed at Live. |
 
 ```powershell
-# PowerShell copy helper (set $RhemitoWeb to your local Rhemito-web checkout on branch `staging_next_js`)
+# PowerShell copy helper for NEW/Rewards-owned files ONLY
+# (set $RhemitoWeb to your local Rhemito-web checkout on branch `staging_next_js`)
 $Handoff = "c:\Users\Khan1\OneDrive\Desktop\drive_d_data\Rhemito-UI\staging-handoff\rhemito-web-nextjs"
 $RhemitoWeb = "C:\path\to\Rhemito-web"
 
@@ -47,10 +49,14 @@ New-Item -ItemType Directory -Force -Path "$RhemitoWeb\pages\ref", "$RhemitoWeb\
 Copy-Item "$Handoff\pages\ref\[code].tsx" "$RhemitoWeb\pages\ref\[code].tsx" -Force
 Copy-Item "$Handoff\pages\refer\[code].tsx" "$RhemitoWeb\pages\refer\[code].tsx" -Force
 Copy-Item "$Handoff\pages\rewards\index.tsx" "$RhemitoWeb\pages\rewards\index.tsx" -Force
-New-Item -ItemType Directory -Force -Path "$RhemitoWeb\components\transactions\payment-methods" | Out-Null
+New-Item -ItemType Directory -Force -Path "$RhemitoWeb\components\overview", "$RhemitoWeb\components\transactions\payment-methods" | Out-Null
+Copy-Item "$Handoff\components\overview\EarnedRewardsBanner.tsx" "$RhemitoWeb\components\overview\EarnedRewardsBanner.tsx" -Force
 Copy-Item "$Handoff\components\transactions\payment-methods\RewardAtPayment.tsx" "$RhemitoWeb\components\transactions\payment-methods\RewardAtPayment.tsx" -Force
-Copy-Item "$Handoff\patches\middleware.ts" "$RhemitoWeb\middleware.ts" -Force
-Copy-Item "$Handoff\patches\clientConfig.staging-example.ts" "$RhemitoWeb\clientConfig.ts" -Force
+
+# IMPORTANT (NON-REGRESSION): Do NOT run `Copy-Item -Force` on `middleware.ts` or `clientConfig.ts`!
+# Instead, inspect the diff against your existing `Rhemito-web` files and merge only the additive blocks:
+code --diff "$RhemitoWeb\middleware.ts" "$Handoff\patches\middleware.ts"
+code --diff "$RhemitoWeb\clientConfig.ts" "$Handoff\patches\clientConfig.staging-example.ts"
 ```
 
 ---
@@ -113,11 +119,12 @@ bindReferralEmail(values.email || userEmail);
 )}
 ```
 
-#### Wiring Snippet 2 — `pages/overview/index.tsx` (Post-Login `POST Account/Rewards/Link`)
-Once the newly registered customer activates their email and lands on `/overview` for the first time, link their account to the stored referral attribution (`code`, `trackingId`, `visitorId`, `receiveCurrency`, `ruleId`):
+#### Wiring Snippet 2 — `pages/overview/index.tsx` (Post-Login `POST Account/Rewards/Link` + `<EarnedRewardsBanner />`)
+Once the newly registered customer activates their email and lands on `/overview` for the first time, link their account to the stored referral attribution (`code`, `trackingId`, `visitorId`, `receiveCurrency`, `ruleId`), notify `<EarnedRewardsBanner />` via `"rhemito:rewards-linked"` so the referee's newly credited welcome bonus renders immediately, and mount `<EarnedRewardsBanner />` directly below Quick Actions / Account Summary:
 
 ```tsx
 // 1. Add imports at top of `pages/overview/index.tsx`:
+import EarnedRewardsBanner from "@/components/overview/EarnedRewardsBanner";
 import api from "@/utils/apiClient";
 import {
   clearReferral,
@@ -146,7 +153,12 @@ useEffect(() => {
       },
     })
     .then(() => {
-      if (!cancelled) clearReferral();
+      if (!cancelled) {
+        clearReferral();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("rhemito:rewards-linked"));
+        }
+      }
     })
     .catch((err: any) => {
       // Clear non-retryable business rejections (already linked, self-referral, existing transfers);
@@ -161,6 +173,9 @@ useEffect(() => {
     cancelled = true;
   };
 }, [userData?.uid, userData?.email]);
+
+// 3. In the `/overview` JSX directly below Quick Actions / Account Summary (renders `null` when available balance is 0):
+<EarnedRewardsBanner />
 ```
 
 #### Wiring Snippet 3 — `components/transactions/payment-methods/PaymentMethods.tsx` & `PaymentMethodSummary.tsx`
@@ -250,24 +265,43 @@ Ensure `Reward$` is visible in the signed-in customer sidebar on `staging_next_j
 
 ---
 
-## Step 2 — Pair with `PromoCode/staging-handoff/furp02-core/` on `furp02-core` (`Staging` Pipeline 33)
+## Step 2 — Pair with `PromoCode/staging-handoff/furp02-core/` (`furp02-core` Pipeline 33) & `mito-admin` (Pipeline 74)
 
-Deploy the backend Staging drop-in package before (or alongside) `Rhemito-web` `staging_next_js` so `https://furp02-staging.funtechcom.com/api/v1/` exposes the upgraded Rewards contract:
+Deploy the backend SQL migration **first**, then `furp02-core` (`Staging` branch → Pipeline 33) and `mito-admin` (`staging` branch → Pipeline 74) so `https://furp02-staging.funtechcom.com/api/v1/` and Staging MITO Admin expose the full upgraded Rewards contract:
 
-1. **Apply Staging SQL Migration (Idempotent):**
-   - Run `PromoCode/staging-handoff/furp02-core/Database/Migrations/UpgradeRewardEngineStagingSync.sql` against the `furp02-staging` SQL Server database (creates `dbo.RewardReferralVisit` and adds `[Floor] DECIMAL(18,2) NULL` + `ReceiveCurrency CHAR(3) NULL` to `dbo.RewardCreditLedger`; `RewardReferralService` and `RewardWalletService` also self-heal these objects idempotently on first call).
-2. **Copy `PromoCode/staging-handoff/furp02-core/` C# Drop-Ins & Apply Wiring Patches on `furp02-core` (`Staging` branch):**
-   - Follow `PromoCode/staging-handoff/DEVELOPER-BACKEND-STAGING-GUIDE.md` and `PromoCode/staging-handoff/furp02-core/Furp.Application/Features/Rewards/PATCHES-AND-WIRING.md`:
-     - `Furp.Application/Features/Rewards/Engine/RewardReferralService.cs` — `VisitAsync` (`dbo.RewardReferralVisit`, 24h visitor+code dedupe, `TRK-XXXXXXXX`), `ResolveTrackingAsync`, `HandoffAsync`, multi-currency `currency_offers`/`offers`, real `cap_reached` (`COUNT`/`AMOUNT`/scheme), `REFERRER_INACTIVE` guard, qualification window expiry, and referee welcome credit `[Floor]`/`ReceiveCurrency`.
-     - `Furp.Application/Features/Rewards/Engine/RewardWalletService.cs` — Single-batch atomic T-SQL `sp_getapplock` wallet debit (`ApplyAtomicSql`), soonest-expiry-first ordering, `BELOW_FLOOR` / `WRONG_CORRIDOR` / `WALLET_BUSY` error codes, and `floor` + `receive_currency` fields on wallet JSON rows.
-     - `Furp.Application/Features/Rewards/RewardCheckout.cs` — `MinPayableAmount` guard (`REWARD_MIN_PAYABLE_AMOUNT`), post-promo bonus cap, `transfer_amount` + `receive_currency` forwarding on wallet `/apply`, and `affiliate_id` + `site_key` forwarding on `/promocodes/redeem`.
-     - Apply the surgical controller/command/handler patches in `PATCHES-AND-WIRING.md` (`RewardCustomerCommands.cs`, `AccountController.cs`, `TransactionRequestHandler.CreateTransaction.cs`, `RewardSchema.cs`, `LocalRewardEngine.cs`, `RewardPromoService.cs`). Note: `pages/ref/[code].tsx` gracefully handles both legacy `Result<bool>` and upgraded `Result<VisitDto>` from `Account/Rewards/Visit` (falling back to `buildGooglePlayReferralUrl(null, code)` when `trackingId` is absent).
-3. **Verify `furp02-staging` App Settings / Environment Variables:**
+1. **Apply Staging SQL Migration FIRST (`sqlcmd -b -I` — Mandatory Before App Deploy):**
+   - Run `PromoCode/staging-handoff/furp02-core/Database/Migrations/UpgradeRewardEngineStagingSync.sql` against the `furp02-staging` SQL Server database **before** deploying `furp02-core`:
+     ```powershell
+     sqlcmd -S <furp02-staging-sql-host> -d <furp02-staging-db> -b -I -i "c:\Users\Khan1\OneDrive\Desktop\drive_d_data\PromoCode\staging-handoff\furp02-core\Database\Migrations\UpgradeRewardEngineStagingSync.sql"
+     ```
+   - Creates `dbo.RewardReferralVisit` and `dbo.RewardReferralRuleAudit`, adds `[Floor] DECIMAL(18,2) NULL` + `ReceiveCurrency CHAR(3) NULL` to `dbo.RewardCreditLedger`, `PaymentMethod NVARCHAR(50) NULL` to `dbo.RewardTransferFact`, `Flow NVARCHAR(16) NULL` to `dbo.RewardPromoRedemption`, and canonical indexes.
+   - Review the non-failing post-commit SELECT report for any send currencies that currently have more than one active referral rule on Staging (archive duplicates in MITO Admin so the new one-active-rule-per-send-currency guard does not return HTTP 409 on future edits).
+2. **Copy `PromoCode/staging-handoff/furp02-core/` C# Drop-Ins & Apply `PATCHES-AND-WIRING.md` (§1–§8) on `furp02-core` (`Staging` branch):**
+   - Follow `PromoCode/staging-handoff/DEVELOPER-BACKEND-STAGING-GUIDE.md` and `PromoCode/staging-handoff/furp02-core/Furp.Application/Features/Rewards/PATCHES-AND-WIRING.md` in exact apply order:
+     - **Drop-In C# Files (4 files):**
+       - `Furp.Application/Features/Rewards/Engine/RewardReferralService.cs` — Canonical `^[A-Z0-9]{6,16}$` + currency-suffix resolution (`{BASE}{CUR}`), `rule_id` locking (`LINK_EXPIRED`), `VisitAsync` (`dbo.RewardReferralVisit`, 24h visitor+code dedupe, `TRK-XXXXXXXX`, Play ID `com.funtechcom.rhemito` & App Store `id1494717263`), `ResolveTrackingAsync`, `HandoffAsync`, multi-currency `currency_offers`/`offers`, real `cap_reached`, `REFERRER_INACTIVE` guard, and referee welcome credit `[Floor]`/`ReceiveCurrency`.
+       - `Furp.Application/Features/Rewards/Engine/RewardWalletService.cs` — Single-batch atomic T-SQL `sp_getapplock` wallet debit (`ApplyAtomicSql`), soonest-expiry-first ordering, `BELOW_FLOOR` / `WRONG_CORRIDOR` / `WALLET_BUSY` error codes, and `floor` + `receive_currency` fields on wallet JSON rows.
+       - `Furp.Application/Features/Rewards/RewardCheckout.cs` — `MinPayableAmount` guard (`REWARD_MIN_PAYABLE_AMOUNT`), post-promo bonus cap, `FixedAmount` (`applies_to === "amount"`) transfer-amount discount leaving commission unchanged, `RewardAffiliateKey` (`affiliate_id` + `site_key: "rhemito"`), and automatic `/api/promocodes/release` rollback if wallet `/apply` fails after `/redeem`.
+       - `Furp.Application/Features/Rewards/Engine/RewardReferralRuleGuards.cs` — `sp_getapplock` one-rule-per-send-currency & unique-name 409 guards (`DUPLICATE_CURRENCY`, `DUPLICATE_NAME`), country-scope metadata normalisation, `dbo.RewardReferralRuleAudit` writer/reader (`GET referral-rules/{id}/audit`), and `RewardSort` active-first sorting across referral rules, promo codes, and bonus schemes.
+     - **Surgical Wiring Sections (§1–§8 of `PATCHES-AND-WIRING.md`):**
+       - **§1** `RewardSchema.cs` (`RewardSchema.DdlSql` unified additive DDL)
+       - **§6** `EngineRewardModels.cs` (additive DTO properties)
+       - **§2** `LocalRewardEngine.cs` (JSON CSV export envelope, `referral/visit` non-clobbering `success`, `rule_id` & `resolve-tracking` / `handoff` / `promocodes/request-events` routes)
+       - **§5** `RewardPromoService.cs` (`AffiliateAllowed` GUID/`rhemito` parity, `FixedAmount` & Receive Money `flow` validation/redemption/request-events)
+       - **§4** `CreateRetailTransactionCommandHandler.cs` (`PaymentMethod` & `promoApply` checkout wiring)
+       - **§7** `RewardBonusService.cs` (active-first bonus scheme sorting & wallet integration)
+       - **§3** `RewardCommands.cs` / `RewardCustomerCommands.cs`, `AffiliateAdminSettingsController.cs`, and `RewardsController` (`ValidateReferralCodeQuery` conditional `currency=`, backward-compatible `POST Account/Rewards/Visit` returning `Result<bool>`, **NEW** `[AllowAnonymous] POST Account/Rewards/Visit/Track` returning `Result<ReferralVisitDto>`, and `Promo/Validate` `flow` + `affiliate_id`/`site_key` forwarding)
+       - **§8** `LocalRewardEngine.cs` (`referral-rules` CRUD wiring to `RewardReferralRuleGuards` + `RewardSort`)
+   - Note: `pages/ref/[code].tsx` calls `POST Account/Rewards/Visit/Track` first and automatically falls back to `POST Account/Rewards/Visit` (`Result<bool>`) on 404/405 or non-object `data`, so rolling deployments never fail.
+3. **Deploy `mito-admin` Rewards Package (`staging` branch → Azure Pipeline 74):**
+   - Follow **`PromoCode/staging-handoff/DEVELOPER-MITO-ADMIN-STAGING-GUIDE.md`** to copy `PromoCode/staging-handoff/mito-admin/src/**` into the `mito-admin` repository (`staging` branch), wire `furpRewardsAdminClient.js` (IIS-405-safe POST tunnel over `/api/v1/Affiliate/AdminSettings/Rewards/engine` — never sends `PUT`/`PATCH`/`DELETE` on the wire) + `downloadCsv.js` (authenticated JSON→Blob CSV export), and deploy via **Azure Pipeline 74**.
+4. **Verify `furp02-staging` App Settings / Environment Variables:**
    - Ensure `REWARD_MIN_PAYABLE_AMOUNT=1.00` is set if gateway rails require a £1.00 floor on `furp02-staging`.
-   - Verify CORS on `furp02-staging.funtechcom.com` allows `https://rhemito-web-nextjs-dev.herokuapp.com`.
-4. **Trigger Azure DevOps Pipeline 33 (`furp02-staging.funtechcom.com` on branch `Staging`):**
-   - Confirm `GET https://furp02-staging.funtechcom.com/api/v1/Account/Rewards/Code/<TEST_CODE>` (with `ApiKey` header) returns HTTP 200 `{ succeeded: true, data: { valid: true, ... } }`.
-5. **Verify Heroku `rhemito-web-nextjs-dev` Config Vars:**
+   - Verify CORS on `furp02-staging.funtechcom.com` allows `https://rhemito-web-nextjs-dev.herokuapp.com` and the Staging MITO Admin origin.
+   - In MITO Admin Promo Code restrictions, any `affiliates` entries must use the affiliate GUID or `rhemito`.
+5. **Trigger Azure DevOps Pipeline 33 (`furp02-staging.funtechcom.com` on branch `Staging`):**
+   - Confirm `GET https://furp02-staging.funtechcom.com/api/v1/Account/Rewards/Code/<TEST_CODE>` (with `ApiKey` header) returns HTTP 200 `{ succeeded: true, data: { valid: true, ... } }`, and `POST .../Account/Rewards/Visit/Track` returns `{ succeeded: true, data: { tracked: true, trackingId: "TRK-...", ... } }`.
+6. **Verify Heroku `rhemito-web-nextjs-dev` Config Vars:**
    - Confirm `NEXT_PUBLIC__ENV=dev` is set on Heroku app `rhemito-web-nextjs-dev` so `clientConfig.ts` selects `https://furp02-staging.funtechcom.com/api/v1/` and Sandbox Checkout.com.
 
 ---
@@ -280,14 +314,15 @@ Run through every check below on Staging before approving Live promotion:
   - Opening `https://rhemito-web-nextjs-dev.herokuapp.com/ref/TESTCODE?to=NGN` loads directly over valid HTTPS **without** redirecting to `www.rhemito-web-nextjs-dev.herokuapp.com` and preserves `?to=NGN`.
   - Inspecting response headers on `/rewards` shows `Cache-Control: no-store, no-cache, must-revalidate, private`, while `/ref/TESTCODE` loads publicly in an incognito window without redirecting to `/login`.
 - [ ] **Referral Landing (`/ref/[code]` & `/refer/[code]`):**
-  - **Desktop (`?platform=desktop`):** Validates code via `GET Account/Rewards/Code/{code}`, fires `POST Account/Rewards/Visit`, stores `{ code, trackingId, visitorId, offer }` in `localStorage["rewards.referral"]`, and redirects cleanly to `/signup?ref={code}`.
-  - **Android (`?platform=android`):** Displays branded Rhemito invite card + **"Get it on Google Play"** button (`referrer=tracking_id%3D...`) + **"Continue on Web"**.
-  - **iOS (`?platform=ios`):** Displays branded Rhemito invite card + one-tap **"Copy referral code"** button (copies code + toast) + **"Download on the App Store"** + **"Continue on Web"**.
+  - **Desktop (`?platform=desktop`):** Validates `^[A-Z0-9]{6,16}$` code (including currency-suffixed `{BASE}{CUR}`) via `GET Account/Rewards/Code/{code}`, fires `POST Account/Rewards/Visit/Track` (`sourceChannel: "LINK"`, `deviceType: "DESKTOP"`, with automatic fallback to `Account/Rewards/Visit`), stores `{ code, trackingId, visitorId, offer }` in `localStorage["rewards.referral"]`, and redirects cleanly to `/signup?ref={code}`.
+  - **Android (`?platform=android`):** Displays branded Rhemito invite card + **"Get it on Google Play"** button (`id=com.funtechcom.rhemito&referrer=tracking_id%3D...%26referral_code%3D...`) + **"Continue on Web"**.
+  - **iOS (`?platform=ios`):** Displays branded Rhemito invite card + one-tap **"Copy referral code"** button (copies code + toast) + **"Download on the App Store"** (`id1494717263`) + **"Continue on Web"**.
   - **Signed-In Guard:** Visiting `/ref/{code}` while logged into an existing Rhemito session clears `rewards.referral`, displays `"Referral links are for new customers only"`, and links to `/rewards`.
   - **Invalid / Inactive Code:** Visiting `/ref/INVALID999` shows a friendly error card with `"Continue to sign up without a referral"`.
-- [ ] **Registration Email Binding → Post-Activation `/overview` Link:**
-  - Complete new-customer signup from `/ref/{code}` → verify `localStorage["rewards.referral"].intendedEmail` matches registered email → activate account → land on `/overview` → verify `POST Account/Rewards/Link` fires once and `rewards.referral` is cleared.
-  - Verify referee welcome bonus (when rule is `BOTH` or `REFEREE_ONLY`) appears in `/rewards` under `Unused bonus` with its `Min. transfer` floor and corridor label.
+- [ ] **Registration Email Binding → Post-Activation `/overview` Link & Earned Bonus Banner:**
+  - Complete new-customer signup from `/ref/{code}` → verify `localStorage["rewards.referral"].intendedEmail` matches registered email → activate account → land on `/overview` → verify `POST Account/Rewards/Link` fires once, `rewards.referral` is cleared, and `window.dispatchEvent(new Event("rhemito:rewards-linked"))` triggers `<EarnedRewardsBanner />` to refresh immediately.
+  - **Referee Earned Bonus & Redemption Visibility on `/overview`:** When the active rule is `BOTH` or `REFEREE_ONLY`, verify `<EarnedRewardsBanner />` renders on `/overview` directly below Quick Actions / Account Summary showing the earned welcome bonus amount (e.g. `£5.00 available bonus`), `Welcome bonus · Invited by {Referrer}` badge, `Min. transfer` floor, corridor pill, expiry date (or orange `<= 14d` warning badge), Payment-step redemption instructions (`Use bonus credit` on `/transactions/sendmoney`), **`Redeem on Send Money →`** CTA (`/transactions/sendmoney`), and **`Details in Reward$`** link (`/rewards`). Verify unreferred zero-balance users see `null` (zero layout change), and referees under a `REFERRER`-only (`£0` referee reward) rule see the slim dismissible confirmation strip.
+  - Verify referee welcome bonus also appears in `/rewards` under `Unused bonus` with its `Min. transfer` floor and corridor label.
 - [ ] **`Reward$` Hub (`/rewards`):**
   - Verify dynamic share URL starts with `https://rhemito-web-nextjs-dev.herokuapp.com/ref/...`.
   - When multiple send-currency rules exist, switch **Offer currency** dropdown and verify offer headline, referral code/link, and wallet currency update cleanly.
@@ -311,13 +346,17 @@ Because `clientConfig.ts` uses `NEXT_PUBLIC__ENV` (`dev` on Staging vs `prod` on
 
 ### Promotion Sequence (Execute in Exact Order)
 
-1. **Database & Core API (`furp02-core` → `pri_prod`):**
-   - Run `PromoCode/staging-handoff/furp02-core/Database/Migrations/UpgradeRewardEngineStagingSync.sql` against the Live SQL Server database (additive `dbo.RewardReferralVisit` table + nullable `[Floor]` and `ReceiveCurrency` columns — zero table locks/downtime).
+1. **Database FIRST, then Core API (`furp02-core` → `pri_prod`):**
+   - **Mandatory Migration-First:** Run `PromoCode/staging-handoff/furp02-core/Database/Migrations/UpgradeRewardEngineStagingSync.sql` against the Live SQL Server database **before** app deployment using `sqlcmd -b -I`:
+     ```powershell
+     sqlcmd -S <furp02-live-sql-host> -d <furp02-live-db> -b -I -i "c:\Users\Khan1\OneDrive\Desktop\drive_d_data\PromoCode\staging-handoff\furp02-core\Database\Migrations\UpgradeRewardEngineStagingSync.sql"
+     ```
+     (Additive `dbo.RewardReferralVisit` & `dbo.RewardReferralRuleAudit` tables + nullable `[Floor]`, `ReceiveCurrency`, `PaymentMethod`, and `Flow` columns — zero table locks/downtime.)
    - Merge validated `Staging` changes into **`pri_prod`**.
    - Run **Azure Pipelines 99 AND 49 together** (`furp02-pre-pord.funtechcom.com-New-Server` + legacy companion on `pri_prod`) so both live FURP surfaces stay 100% in sync.
-   - Smoke-check `GET https://furp02-pre-pord.funtechcom.com/api/v1/Account/Rewards/Code/<LIVE_CODE>`.
-2. **Admin Hub (`mito-admin` → `prod`, if Admin rule UI changes are included):**
-   - Merge `staging` → **`prod`** and deploy via **Azure Pipeline 65** (Heroku `mito-admin` → `https://admin.mito.money/`).
+   - Smoke-check `GET https://furp02-pre-pord.funtechcom.com/api/v1/Account/Rewards/Code/<LIVE_CODE>` and `POST .../Account/Rewards/Visit/Track`.
+2. **Admin Hub (`mito-admin` → `prod`):**
+   - Follow `PromoCode/staging-handoff/DEVELOPER-MITO-ADMIN-STAGING-GUIDE.md`: merge `staging` → **`prod`** (zero code edits — `REACT_APP_API_URL` / `VITE_FURP_BASE_URL` switches host automatically) and deploy via **Azure Pipeline 65** (Heroku `mito-admin` → `https://admin.mito.money/`).
 3. **Customer Web (`Rhemito-web` → `prod_main`):**
    - Confirm Heroku production app has `NEXT_PUBLIC__ENV=prod`.
    - Merge `staging_next_js` changes into **`prod_main`** and deploy via **Azure Pipeline 95** (`https://www.rhemito.com/`).

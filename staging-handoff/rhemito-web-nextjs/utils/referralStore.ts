@@ -12,9 +12,28 @@ const CODE_KEY = "rewards.referral";
 const VISITOR_KEY = "rewards.visitor";
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
-export const REFERRAL_CODE_REGEX = /^[A-Z0-9_-]{3,32}$/;
-export const GOOGLE_PLAY_PACKAGE_ID = "com.rhemito.app";
-export const APPLE_APP_STORE_URL = "https://apps.apple.com/gb/app/rhemito/id1582961115";
+export const REFERRAL_CODE_REGEX = /^[A-Z0-9]{6,16}$/;
+export const REFERRAL_CODE_MESSAGE = "Referral codes are 6–16 letters and numbers.";
+export const SUPPORTED_REFERRAL_CURRENCIES = [
+  "GBP",
+  "USD",
+  "EUR",
+  "NGN",
+  "CAD",
+  "AUD",
+  "JPY",
+  "CNY",
+  "INR",
+  "ZAR",
+  "KES",
+  "GHS",
+  "AED",
+] as const;
+
+export const GOOGLE_PLAY_PACKAGE_ID = "com.funtechcom.rhemito";
+export const GOOGLE_PLAY_BASE_URL = `https://play.google.com/store/apps/details?id=${GOOGLE_PLAY_PACKAGE_ID}`;
+export const APPLE_APP_STORE_URL =
+  "https://apps.apple.com/gb/app/rhemito-money-transfer/id1494717263";
 
 export interface StoredReferralOffer {
   referrerBonus?: number;
@@ -50,9 +69,36 @@ export function normaliseReferralCode(raw: string | null | undefined): string | 
   const cleaned = String(raw || "")
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, "");
+    .replace(/[^A-Z0-9]/g, "");
   if (!cleaned || !REFERRAL_CODE_REGEX.test(cleaned)) return null;
   return cleaned;
+}
+
+/**
+ * Derives the currency-specific referral code from a customer's base code and send currency
+ * (e.g. `JOHN5054` + `USD` -> `JOHN5054USD`). Replaces any existing currency suffix cleanly.
+ */
+export function referralCodeForCurrency(
+  baseCode: string | null | undefined,
+  currency: string | null | undefined,
+): string {
+  const raw = String(baseCode || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  const cur = String(currency || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (!raw) return "";
+  if (!cur) return raw;
+  for (const suffix of SUPPORTED_REFERRAL_CURRENCIES) {
+    if (raw.length >= 9 && raw.endsWith(suffix)) {
+      const stripped = raw.slice(0, -suffix.length);
+      return `${stripped}${cur}`;
+    }
+  }
+  return `${raw}${cur}`;
 }
 
 function normaliseEmail(raw?: string | null): string | null {
@@ -88,19 +134,21 @@ export function getOrCreateVisitorId(): string {
 }
 
 /**
- * Builds an Android Google Play Install Referrer URL embedding `tracking_id` and `ref`.
+ * Builds an Android Google Play Install Referrer URL embedding `tracking_id` and `referral_code`
+ * (matching `RewardReferralService.cs` and `client/src/lib/rewards.ts`).
  */
 export function buildGooglePlayReferralUrl(
   trackingId?: string | null,
   code?: string | null,
   packageId = GOOGLE_PLAY_PACKAGE_ID,
 ): string {
+  const baseUrl = `https://play.google.com/store/apps/details?id=${encodeURIComponent(packageId)}`;
   const parts: string[] = [];
   if (trackingId) parts.push(`tracking_id=${encodeURIComponent(trackingId)}`);
-  if (code) parts.push(`ref=${encodeURIComponent(code)}`);
-  parts.push("utm_source=referral");
+  if (code) parts.push(`referral_code=${encodeURIComponent(code)}`);
+  if (parts.length === 0) return baseUrl;
   const referrerParam = encodeURIComponent(parts.join("&"));
-  return `https://play.google.com/store/apps/details?id=${encodeURIComponent(packageId)}&referrer=${referrerParam}`;
+  return `${baseUrl}&referrer=${referrerParam}`;
 }
 
 /**

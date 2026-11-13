@@ -10,6 +10,9 @@ const DRAFT_KEY = "rewards.promoDraft";
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export type PromoApplyMode = "REDUCE_SEND" | "INCREASE_RECEIVE";
+export type PromoAppliesTo = "fee" | "amount" | "bonus";
+
+export const PROMO_CODE_REGEX = /^[A-Z0-9-]{1,20}$/;
 
 export interface PromoCodeDraft {
   code: string;
@@ -17,6 +20,7 @@ export interface PromoCodeDraft {
   currency?: string;
   note?: string;
   discountBasis?: "VALUE" | "FEE" | "PAYABLE";
+  appliesTo?: PromoAppliesTo;
   customerChoice?: boolean;
   promoApply?: PromoApplyMode;
   savedAt: number;
@@ -28,6 +32,7 @@ export interface SavePromoDraftInput {
   currency?: string;
   note?: string;
   discountBasis?: "VALUE" | "FEE" | "PAYABLE";
+  appliesTo?: PromoAppliesTo;
   customerChoice?: boolean;
   promoApply?: PromoApplyMode;
 }
@@ -36,7 +41,7 @@ export function savePromoDraft(input: SavePromoDraftInput): PromoCodeDraft | nul
   const code = String(input.code || "")
     .trim()
     .toUpperCase();
-  if (!code || !/^[A-Z0-9_-]{1,20}$/.test(code)) return null;
+  if (!code || !PROMO_CODE_REGEX.test(code)) return null;
 
   const draft: PromoCodeDraft = {
     code,
@@ -44,6 +49,7 @@ export function savePromoDraft(input: SavePromoDraftInput): PromoCodeDraft | nul
     currency: input.currency ? String(input.currency).trim().toUpperCase() : undefined,
     note: input.note ? String(input.note).trim() : undefined,
     discountBasis: input.discountBasis,
+    appliesTo: input.appliesTo,
     customerChoice: Boolean(input.customerChoice),
     promoApply: input.promoApply || "REDUCE_SEND",
     savedAt: Date.now(),
@@ -89,6 +95,12 @@ export function readPromoDraft(): PromoCodeDraft | null {
       currency: parsed.currency ? String(parsed.currency).toUpperCase() : undefined,
       note: parsed.note ? String(parsed.note) : undefined,
       discountBasis: parsed.discountBasis,
+      appliesTo:
+        parsed.appliesTo === "amount" ||
+        parsed.appliesTo === "bonus" ||
+        parsed.appliesTo === "fee"
+          ? parsed.appliesTo
+          : undefined,
       customerChoice: Boolean(parsed.customerChoice),
       promoApply:
         parsed.promoApply === "INCREASE_RECEIVE" ? "INCREASE_RECEIVE" : "REDUCE_SEND",

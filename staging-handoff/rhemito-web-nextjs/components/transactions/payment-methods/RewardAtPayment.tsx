@@ -19,12 +19,14 @@ import {
 } from "@chakra-ui/react";
 import api from "@/utils/apiClient";
 import { apiData } from "@/utils/apiResult";
-import { flagOn } from "@/utils/rewardsGate";
+import { flagOn, normaliseRewardKindKey } from "@/utils/rewardsGate";
 import { toastrMsg } from "@/utils/toastrMsg";
 import {
   clearPromoCodeDraft,
+  PROMO_CODE_REGEX,
   readPromoCodeDraft,
   writePromoCodeDraft,
+  type PromoAppliesTo,
   type PromoApplyMode,
 } from "@/utils/promoCodeDraft";
 
@@ -43,12 +45,13 @@ import {
  *     and freezes all mutations/re-validations when `locked={isSubmitting}` (`PROMO-07` / `P-20`).
  */
 
-export type { PromoApplyMode };
+export type { PromoApplyMode, PromoAppliesTo };
 
 export type Choice = {
   promoCode: string;
   promoDiscount: number;
   promoApply: PromoApplyMode;
+  promoAppliesTo?: PromoAppliesTo;
   receiveBoostSendCurrency: number;
   bonusAmount: number;
   blocked: boolean;
@@ -62,6 +65,7 @@ export type Props = {
   paymentMethod?: string;
   exchangeRate?: number;
   minPayableFloor?: number;
+  flow?: "send" | "receive";
   locked?: boolean;
   onChange: (choice: Choice) => void;
 };
@@ -145,6 +149,7 @@ const RewardAtPayment = ({
   paymentMethod,
   exchangeRate,
   minPayableFloor,
+  flow,
   locked = false,
   onChange,
 }: Props) => {
@@ -161,6 +166,7 @@ const RewardAtPayment = ({
   const [discountBasis, setDiscountBasis] = useState<"VALUE" | "FEE" | "PAYABLE">(
     "PAYABLE",
   );
+  const [appliesTo, setAppliesTo] = useState<PromoAppliesTo>("fee");
   const [promoApply, setPromoApply] = useState<PromoApplyMode>("REDUCE_SEND");
   const [checking, setChecking] = useState(false);
 
@@ -266,11 +272,11 @@ const RewardAtPayment = ({
   const grossPayable = Math.max(0, Number(amount) || 0);
   const payablePromoDiscount = useMemo(() => {
     if (!promoOn || rawPromoDiscount <= 0) return 0;
-    if (effectiveApply === "INCREASE_RECEIVE") return 0;
+    if (effectiveApply === "INCREASE_RECEIVE" || appliesTo === "bonus") return 0;
     return grossPayable > 0
       ? roundMoney(Math.min(rawPromoDiscount, grossPayable), curCode)
       : roundMoney(rawPromoDiscount, curCode);
-  }, [promoOn, rawPromoDiscount, effectiveApply, grossPayable, curCode]);
+  }, [promoOn, rawPromoDiscount, effectiveApply, appliesTo, grossPayable, curCode]);
 
   const receiveBoostSendCurrency = useMemo(() => {
     if (!promoOn || rawPromoDiscount <= 0) return 0;
@@ -324,6 +330,11 @@ const RewardAtPayment = ({
       setPromo(draft.code);
       setCustomerChoice(Boolean(draft.customerChoice));
       if (draft.discountBasis) setDiscountBasis(draft.discountBasis);
+      const draftAppliesTo: PromoAppliesTo =
+        draft.appliesTo === "amount" || draft.appliesTo === "bonus"
+          ? draft.appliesTo
+          : "fee";
+      setAppliesTo(draftAppliesTo);
       setPromoApply(
         draft.promoApply === "INCREASE_RECEIVE" ? "INCREASE_RECEIVE" : "REDUCE_SEND",
       );
@@ -331,9 +342,12 @@ const RewardAtPayment = ({
         setPromoOn(true);
         setPromoRejected(false);
         setRawPromoDiscount(draft.discount);
+        const draftCur = String(draft.currency || curCode).toUpperCase();
         setPromoNote(
           draft.note ||
-            `You save ${String(draft.currency || curCode).toUpperCase()} ${draft.discount.toFixed(digits)}`,
+            (draftAppliesTo === "amount"
+              ? `${draftCur} ${draft.discount.toFixed(digits)} off transfer amount (full send amount delivered)`
+              : `You save ${draftCur} ${draft.discount.toFixed(digits)}`),
         );
       }
       asked.current = true;
@@ -350,20 +364,27 @@ const RewardAtPayment = ({
         if (cancelled) return;
         const data = apiData(body) || body;
         const kinds = pick(data, "kinds");
-        if (Array.isArray(kinds)) {
-          const enabled = (name: string) =>
-            kinds.some(
-              (row: any) =>
-                String(pick(row, "kind") || "").toUpperCase() === name &&
-                flagOn(row, "enabled", true),
-            );
+        if (Array.isArray(kinds) && kinds.length > 0) {
+          const enabled = (target: string) =>
+            kinds.some((row: any) => {
+              if (typeof row === "string") {
+                return normaliseRewardKindKey(row) === target;
+              }
+              return (
+                normaliseRewardKindKey(pick(row, "kind")) === target &&
+                flagOn(row, "enabled", true)
+              );
+            });
           setShowPromo(enabled("PROMO"));
           setShowBonus(enabled("BONUS_SCHEME") || enabled("REFERRAL"));
         }
         setAvailable(Number(pick(data, "availableBalance") || 0));
         const sources = pick(data, "bySource") || pick(data, "by_source");
         setBySource(Array.isArray(sources) ? sources : []);
-        const unused = pick(data, "unused") || pick(data, "credits");
+        const unused =
+          pick(data, "unused") ||
+          pick(data, "unusedCredits") ||
+          pick(data, "credits");
         setUnusedCredits(Array.isArray(unused) ? unused : []);
         setBlocked(flagOn(data, "bonusBlocked", false));
       })
@@ -381,6 +402,7 @@ const RewardAtPayment = ({
       promoCode: activeCode,
       promoDiscount: payablePromoDiscount,
       promoApply: effectiveApply,
+      promoAppliesTo: promoOn ? appliesTo : undefined,
       receiveBoostSendCurrency,
       bonusAmount: resolvedBonusAmount,
       blocked: Boolean(promo.trim()) && !promoOn,
@@ -391,6 +413,7 @@ const RewardAtPayment = ({
     promoOn,
     payablePromoDiscount,
     effectiveApply,
+    appliesTo,
     receiveBoostSendCurrency,
     resolvedBonusAmount,
     blocked,
@@ -408,6 +431,7 @@ const RewardAtPayment = ({
     setPromoRejected(false);
     setRawPromoDiscount(0);
     setCustomerChoice(false);
+    setAppliesTo("fee");
     setPromoApply("REDUCE_SEND");
     setPromoNote("");
     clearPromoCodeDraft();
@@ -415,6 +439,7 @@ const RewardAtPayment = ({
       promoCode: "",
       promoDiscount: 0,
       promoApply: "REDUCE_SEND",
+      promoAppliesTo: undefined,
       receiveBoostSendCurrency: 0,
       bonusAmount: resolvedBonusAmount,
       blocked: false,
@@ -436,13 +461,13 @@ const RewardAtPayment = ({
       setPromoNote("Please enter a promo code.");
       return;
     }
-    if (!/^[A-Z0-9_-]{1,20}$/.test(code)) {
+    if (!PROMO_CODE_REGEX.test(code)) {
       setPromoRejected(true);
       setPromoNote("Enter a valid promo code.");
       return;
     }
 
-    const quoteKey = `${code}|${amount}|${fee}|${curCode}|${recCode}|${paymentMethod || ""}`;
+    const quoteKey = `${code}|${amount}|${fee}|${curCode}|${recCode}|${paymentMethod || ""}|${flow || "send"}`;
     lastValidatedQuoteKey.current = quoteKey;
     const seq = ++validationSeq.current;
     setChecking(true);
@@ -456,6 +481,7 @@ const RewardAtPayment = ({
         receiveCurrency: recCode || undefined,
       };
       if (paymentMethod) payload.paymentMethod = paymentMethod;
+      if (flow) payload.flow = flow;
 
       const body = await api.post("Account/Rewards/Promo/Validate", {
         data: payload,
@@ -474,6 +500,7 @@ const RewardAtPayment = ({
         setPromoRejected(true);
         setRawPromoDiscount(0);
         setCustomerChoice(false);
+        setAppliesTo("fee");
         const message =
           pick(body, "message") ||
           pick(data, "message") ||
@@ -488,9 +515,20 @@ const RewardAtPayment = ({
         setPromoRejected(true);
         setRawPromoDiscount(0);
         setCustomerChoice(false);
+        setAppliesTo("fee");
         setPromoNote("This promo code isn't valid for this transfer.");
         return;
       }
+
+      const rawAppliesTo = String(
+        pick(data, "appliesTo") ?? pick(data, "applies_to") ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const nextAppliesTo: PromoAppliesTo =
+        rawAppliesTo === "amount" || rawAppliesTo === "bonus"
+          ? rawAppliesTo
+          : "fee";
 
       const rawBasis = String(pick(data, "discountBasis") || "PAYABLE")
         .trim()
@@ -498,21 +536,34 @@ const RewardAtPayment = ({
       const nextBasis: "VALUE" | "FEE" | "PAYABLE" =
         rawBasis === "VALUE" || rawBasis === "FEE" ? rawBasis : "PAYABLE";
       const nextChoice =
-        nextBasis === "VALUE" || flagOn(data, "customerChoice", false);
+        nextAppliesTo !== "amount" &&
+        nextAppliesTo !== "bonus" &&
+        (nextBasis === "VALUE" || flagOn(data, "customerChoice", false));
       const nextApply: PromoApplyMode = nextChoice ? promoApply : "REDUCE_SEND";
 
       const cappedForDisplay =
-        nextApply === "REDUCE_SEND" && grossPayable > 0
+        nextApply === "REDUCE_SEND" &&
+        nextAppliesTo !== "bonus" &&
+        grossPayable > 0
           ? Math.min(discount, grossPayable)
           : discount;
 
-      const display =
-        pick(data, "displayText") ||
-        pick(data, "display_text") ||
-        (nextChoice
-          ? `${curCode} ${cappedForDisplay.toFixed(digits)} promo unlocked — choose how to apply it below.`
-          : `You save ${curCode} ${cappedForDisplay.toFixed(digits)} on the fee`);
+      const serverDisplay = String(
+        pick(data, "displayText") ?? pick(data, "display_text") ?? "",
+      ).trim();
 
+      const display =
+        nextAppliesTo === "amount" &&
+        (!serverDisplay || /on the fee/i.test(serverDisplay))
+          ? `${curCode} ${cappedForDisplay.toFixed(digits)} off transfer amount (full send amount delivered)`
+          : serverDisplay ||
+            (nextChoice
+              ? `${curCode} ${cappedForDisplay.toFixed(digits)} promo unlocked — choose how to apply it below.`
+              : nextAppliesTo === "bonus"
+                ? `${curCode} ${cappedForDisplay.toFixed(digits)} bonus paid into your bank with your payout`
+                : `You save ${curCode} ${cappedForDisplay.toFixed(digits)} on the fee`);
+
+      setAppliesTo(nextAppliesTo);
       setDiscountBasis(nextBasis);
       setCustomerChoice(nextChoice);
       if (!nextChoice) setPromoApply("REDUCE_SEND");
@@ -526,9 +577,13 @@ const RewardAtPayment = ({
         discount: cappedForDisplay,
         currency: curCode,
         discountBasis: nextBasis,
+        appliesTo: nextAppliesTo,
         customerChoice: nextChoice,
         promoApply: nextApply,
-        note: `Promo code applied: ${curCode} ${cappedForDisplay.toFixed(digits)} off`,
+        note:
+          nextAppliesTo === "amount"
+            ? `${curCode} ${cappedForDisplay.toFixed(digits)} off transfer amount (full send amount delivered)`
+            : `Promo code applied: ${curCode} ${cappedForDisplay.toFixed(digits)} off`,
       });
 
       if (!silentRevalidate) {
@@ -543,6 +598,7 @@ const RewardAtPayment = ({
       setPromoRejected(true);
       setRawPromoDiscount(0);
       setCustomerChoice(false);
+      setAppliesTo("fee");
       const message =
         (typeof error === "string" && error) ||
         error?.message ||
@@ -558,7 +614,7 @@ const RewardAtPayment = ({
   // Debounced (400ms) re-validation across quote/corridor/paymentMethod changes (`PROMO-07` / `P-20`)
   useEffect(() => {
     if (locked || !asked.current || !promo.trim()) return;
-    const nextQuoteKey = `${promo.trim().toUpperCase()}|${amount}|${fee}|${curCode}|${recCode}|${paymentMethod || ""}`;
+    const nextQuoteKey = `${promo.trim().toUpperCase()}|${amount}|${fee}|${curCode}|${recCode}|${paymentMethod || ""}|${flow || "send"}`;
     if (nextQuoteKey === lastValidatedQuoteKey.current) return;
 
     const timer = window.setTimeout(() => {
@@ -569,7 +625,7 @@ const RewardAtPayment = ({
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amount, fee, curCode, recCode, paymentMethod, locked]);
+  }, [amount, fee, curCode, recCode, paymentMethod, flow, locked]);
 
   const showRemove = promoOn || promoRejected;
   const convertedBoostPreview =
@@ -833,6 +889,18 @@ const RewardAtPayment = ({
               {promoNote}
             </Text>
           ) : null}
+
+          {promoOn && appliesTo === "amount" && !customerChoice && (
+            <Text
+              fontSize="13px"
+              color="teal.700"
+              mt="4px"
+              data-testid="promo-applies-to-amount"
+            >
+              Reduces your transfer amount by {curCode}{" "}
+              {payablePromoDiscount.toFixed(digits)} (transfer fee unchanged).
+            </Text>
+          )}
 
           {/* Customer Choice RadioGroup (`discountBasis === "VALUE"` / `customerChoice === true`) */}
           {promoOn && customerChoice && rawPromoDiscount > 0 && (

@@ -176,7 +176,12 @@ describe("Re-validation, and the lock that prevents 'already used'", () => {
 
     const page = source("client/src/pages/SendMoney.tsx");
     const paySites = countMatches(page, /await paySendMoneyTransaction\(/);
-    expect(countMatches(page, /if \(promoApplied\) promo\.lock\(\);\s*await paySendMoneyTransaction\(/)).toBe(paySites);
+    expect(
+      countMatches(
+        page,
+        /if \(promoApplied\) promo\.lock\(\);\s*(?:[A-Za-z_$][\w$]*\s*=\s*)?await paySendMoneyTransaction\(/,
+      ),
+    ).toBe(paySites);
   });
 
   rule("PROMO-08", "NEGATIVE (fixed bug): a promo used for the first time never shows 'You have already used this promo code' after the customer picks a payment method", {

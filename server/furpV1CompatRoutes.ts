@@ -24,7 +24,7 @@ import {
   mito,
   syncCustomer,
 } from "./rewardsService";
-import { callMito, promoEnabled, validatePromo } from "./promo/client";
+import { callMito, promoEnabled, validatePromo, type PromoRequest } from "./promo/client";
 import { storage } from "./storage";
 
 type Json = Record<string, any>;
@@ -62,15 +62,21 @@ function failFrom(res: Response, err: unknown, fallback = "Something went wrong.
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const UNAVAILABLE = "Rewards are unavailable right now. Please try again shortly.";
-const CODE_RE = /^[A-Z0-9-]{3,32}$/;
+const CODE_RE = /^[A-Z0-9]{6,16}$/;
+const CODE_MESSAGE = "Referral codes are 6–16 letters and numbers.";
 const PROMO_RE = /^[A-Z0-9-]{1,20}$/;
 
 function sessionUserId(req: Request): string | undefined {
   return req.session?.userId ?? (demoModeEnabled ? "user_123" : undefined);
 }
 
+/**
+ * One referral-code rule everywhere (engine, FURP `NormaliseCode`, Rhemito-web): trim, upper-case, strip every
+ * non [A-Z0-9] character, then `^[A-Z0-9]{6,16}$`. The 16 (vs the 6–12 generated base codes) admits currency-suffixed
+ * share codes such as `A1B2C3GBP`.
+ */
 function normaliseCode(raw: unknown): string | null {
-  const code = String(raw ?? "").trim().toUpperCase();
+  const code = String(raw ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   return CODE_RE.test(code) ? code : null;
 }
 
@@ -153,15 +159,34 @@ export function registerFurpV1CompatRoutes(app: Express): void {
           .reduce((sum, r) => sum + Number(r.discount ?? r.discount_amount ?? 0), 0),
       );
 
-      const kinds: string[] = [];
-      if (offer || referralCode) kinds.push("REFERRAL");
-      if (String(process.env.BONUS_ENABLED ?? "true").toLowerCase() !== "false") kinds.push("BONUS");
-      if (promoEnabled()) kinds.push("PROMO");
+      // `kinds` mirrors FURP RewardCatalogueDto: always all three kinds as objects, `enabled` carries the switch.
+      const kinds = [
+        {
+          kind: "REFERRAL",
+          enabled: Boolean(offer || referralCode),
+          title: "Refer & Earn",
+          summary:
+            "Invite a friend. You, they, or both of you can earn bonus credit when their first qualifying transfer goes through.",
+        },
+        {
+          kind: "BONUS_SCHEME",
+          enabled: String(process.env.BONUS_ENABLED ?? "true").toLowerCase() !== "false",
+          title: "Bonus schemes",
+          summary:
+            "Extra credit for a large transfer, loyalty after several transfers, or a bonus when someone pays a request.",
+        },
+        {
+          kind: "PROMO",
+          enabled: promoEnabled(),
+          title: "Promo codes",
+          summary: "Enter a code on the payment step of Send Money. It comes off what you pay or boosts payout.",
+        },
+      ];
 
       const onCurrency = (row: Json) => !row.currency || String(row.currency).toUpperCase() === currency;
 
       succeed(res, {
-        enabled: kinds.length > 0,
+        enabled: kinds.some((k) => k.enabled),
         kinds,
         balanceCurrency: currency,
         availableBalance: money(balance.available),
@@ -194,15 +219,20 @@ export function registerFurpV1CompatRoutes(app: Express): void {
   app.get("/api/v1/Account/Rewards/Code/:code", async (req: Request, res: Response) => {
     try {
       const code = normaliseCode(req.params.code);
-      if (!code) return fail(res, "Referral codes are 3–32 letters, numbers and dashes.");
+      if (!code) return fail(res, CODE_MESSAGE);
 
-      const currency = cur(req.query.currency) ?? "GBP";
+      // Forward `currency` only when the caller supplied it: a hard "GBP" default would always beat the currency
+      // a suffixed code (A1B2C3USD) locks to. `currency` (GBP fallback) is only used to fill the response.
+      const suppliedCurrency = cur(req.query.currency);
+      const currency = suppliedCurrency ?? "GBP";
       const receive = cur(req.query.receiveCurrency ?? req.query.receive_currency ?? req.query.to);
       const ruleId = req.query.ruleId ?? req.query.rule_id;
-      const qs =
-        `?currency=${encodeURIComponent(currency)}` +
-        (receive ? `&receive_currency=${encodeURIComponent(receive)}` : "") +
-        (ruleId && /^\d+$/.test(String(ruleId)) ? `&rule_id=${Number(ruleId)}` : "");
+      const qsParts = [
+        suppliedCurrency ? `currency=${encodeURIComponent(suppliedCurrency)}` : "",
+        receive ? `receive_currency=${encodeURIComponent(receive)}` : "",
+        ruleId && /^\d+$/.test(String(ruleId)) ? `rule_id=${Number(ruleId)}` : "",
+      ].filter(Boolean);
+      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
 
       let result: Json;
       try {
@@ -243,9 +273,15 @@ export function registerFurpV1CompatRoutes(app: Express): void {
 
   /**
    * Record a referral link visit (anonymous). Never fails the page: unknown codes / engine outages answer tracked=false.
-   * POST /api/v1/Account/Rewards/Visit  { code, visitorId, receiveCurrency, ruleId? }
+   * POST /api/v1/Account/Rewards/Visit        { code, visitorId, receiveCurrency, ruleId? }  (unchanged: answers the DTO)
+   * POST /api/v1/Account/Rewards/Visit/Track  same body, same DTO { tracked, trackingId, playStoreUrl, appStoreUrl }
+   *
+   * Divergence from furp02-core (recorded in SyncManifest): FURP `Account/Rewards/Visit` stays Result<bool> for mobile / widget
+   * callers and exposes the DTO only on `Visit/Track`. This prototype keeps `/Visit` returning the DTO because
+   * `client/src/lib/furpApiAdapter.ts` reads `trackingId` from it (it accepts both a bool and an object), and mirrors the
+   * FURP route on `/Visit/Track`.
    */
-  app.post("/api/v1/Account/Rewards/Visit", async (req: Request, res: Response) => {
+  const trackVisit = async (req: Request, res: Response) => {
     const code = normaliseCode(req.body?.code);
     const untracked = () =>
       succeed(res, { tracked: false, trackingId: null, playStoreUrl: null, appStoreUrl: null });
@@ -274,7 +310,7 @@ export function registerFurpV1CompatRoutes(app: Express): void {
         },
       });
       succeed(res, {
-        tracked: true,
+        tracked: result?.success !== false,
         trackingId: result.trackingId ?? result.tracking_id ?? null,
         playStoreUrl: result.playStoreUrl ?? result.play_store_url ?? null,
         appStoreUrl: result.appStoreUrl ?? result.app_store_url ?? null,
@@ -283,7 +319,9 @@ export function registerFurpV1CompatRoutes(app: Express): void {
       console.error("[furpV1CompatRoutes] visit not recorded:", err instanceof Error ? err.message : err);
       untracked();
     }
-  });
+  };
+  app.post("/api/v1/Account/Rewards/Visit", trackVisit);
+  app.post("/api/v1/Account/Rewards/Visit/Track", trackVisit);
 
   /**
    * Link the signed-in customer to a referrer after login (existing customer / mobile hand-off).
@@ -292,7 +330,7 @@ export function registerFurpV1CompatRoutes(app: Express): void {
   app.post("/api/v1/Account/Rewards/Link", async (req: Request, res: Response) => {
     try {
       const code = normaliseCode(req.body?.code);
-      if (!code) return fail(res, "Referral codes are 3–32 letters, numbers and dashes.");
+      if (!code) return fail(res, CODE_MESSAGE);
       const userId = sessionUserId(req);
       if (!userId) return fail(res, "Please sign in to continue.", 401);
 
@@ -353,7 +391,9 @@ export function registerFurpV1CompatRoutes(app: Express): void {
       const userId = sessionUserId(req);
       if (userId) void syncCustomer(userId).catch(() => {});
 
-      const result = await validatePromo({
+      // Tenant keys mirror furp02-core `RewardCheckout` (the prototype engine ignores them); `flow` is forwarded only for
+      // Receive Money requests ("send" is the engine default).
+      const promoInput: PromoRequest & { affiliate_id?: string; site_key?: string } = {
         code,
         amount,
         fee,
@@ -362,7 +402,11 @@ export function registerFurpV1CompatRoutes(app: Express): void {
         sourceCurrency: currency,
         destCurrency: receive,
         paymentMethod: req.body?.paymentMethod ? String(req.body.paymentMethod) : undefined,
-      });
+        ...(String(req.body?.flow ?? "").toLowerCase() === "receive" ? { flow: "receive" as const } : {}),
+        affiliate_id: process.env.FURP_AFFILIATE_ID || undefined,
+        site_key: "rhemito",
+      };
+      const result = await validatePromo(promoInput);
       if (!result.ok) {
         return fail(res, result.error ?? "This promo code isn't valid. Check it and try again.", result.status >= 400 ? result.status : 400);
       }
@@ -388,6 +432,8 @@ export function registerFurpV1CompatRoutes(app: Express): void {
             : `You save ${currency} ${discount.toFixed(2)} on the fee`),
         discountBasis: basis,
         customerChoice,
+        // additive: what the discount reduces ("amount" for FixedAmount, "bonus" for Receive Money, "fee" otherwise)
+        ...(body.applies_to ?? body.appliesTo ? { appliesTo: String(body.applies_to ?? body.appliesTo) } : {}),
       });
     } catch (err) {
       failFrom(res, err, "Failed to validate promo code");
@@ -426,7 +472,7 @@ export function registerFurpV1CompatRoutes(app: Express): void {
           "dbo.RewardFeed",
           "dbo.RewardRateAuditLog",
         ],
-        newTables: ["dbo.RewardReferralVisit"],
+        newTables: ["dbo.RewardReferralVisit", "dbo.RewardReferralRuleAudit"],
         furpCoreTables: [
           "dbo.Transaction",
           "dbo.RetailTransaction",
@@ -442,18 +488,29 @@ export function registerFurpV1CompatRoutes(app: Express): void {
           "dbo.RewardTransferFact.PaymentMethod NVARCHAR(50) NULL",
           "UX_RewardPromoRedemption_Code_Transfer_Redeemed (filtered unique)",
           "IX_RewardPromoRedemption_CodeStatusUser",
+          "dbo.RewardPromoRedemption.Flow NVARCHAR(16) NULL (NULL = send, receive = Receive Money bonus code)",
         ],
         migration: "furp02-core/Database/Migrations/UpgradeRewardEngineStagingSync.sql",
       },
       endpoints: [
         { method: "GET", path: "/api/v1/Account/Rewards", auth: true, engine: ["GET /api/referral/offer", "GET /api/wallet/:id", "GET /api/referral/referrals", "GET /api/promocodes/customers/:id/redemptions"], dto: "RewardCatalogueDto" },
         { method: "GET", path: "/api/v1/Account/Rewards/Code/:code", auth: false, engine: ["GET /api/referral/codes/:code"], dto: "ReferralCodeCheckDto" },
-        { method: "POST", path: "/api/v1/Account/Rewards/Visit", auth: false, engine: ["POST /api/referral/visits"], dto: "{ tracked, trackingId, playStoreUrl, appStoreUrl }" },
+        {
+          method: "POST",
+          path: "/api/v1/Account/Rewards/Visit",
+          auth: false,
+          engine: ["POST /api/referral/visits"],
+          dto: "{ tracked, trackingId, playStoreUrl, appStoreUrl }",
+          note: "Prototype-only divergence: furp02-core keeps `Account/Rewards/Visit` as Result<bool> (mobile / widget callers); the prototype answers the DTO here because furpApiAdapter.ts reads trackingId. Use `Visit/Track` for the FURP-identical DTO route.",
+        },
+        { method: "POST", path: "/api/v1/Account/Rewards/Visit/Track", auth: false, engine: ["POST /api/referral/visits"], dto: "{ tracked, trackingId, playStoreUrl, appStoreUrl }", note: "Mirrors furp02-core `POST Account/Rewards/Visit/Track` (Result<ReferralVisitDto>)." },
         { method: "POST", path: "/api/v1/Account/Rewards/Link", auth: true, engine: ["POST /api/referral/referrals"], dto: "string (referral status)" },
         { method: "POST", path: "/api/v1/Account/Rewards/Promo/Validate", auth: false, engine: ["POST /api/promocodes/validate"], dto: "PromoCheckDto" },
+        { method: "GET", path: "/api/referral-rules/:id/audit", auth: false, engine: ["GET /api/referral-rules/:id/audit"], dto: "{ data: [ { id, rule_id, field, old_value, new_value, admin_user, created_at } ] }", note: "Mito Admin referral rule history (engine route; furp02-core: GET referral-rules/{id}/audit, alias /history)." },
         { method: "GET", path: "/api/v1/Account/Rewards/SyncManifest", auth: false, engine: [], dto: "this document" },
       ],
       envelope: "{ succeeded: boolean, code: number, message: string, data: T }",
+      prototypeOnly: true,
     });
   });
 }

@@ -110,8 +110,9 @@ describe("referral code storage", () => {
 
   it("validates the code format", () => {
     expect(REFERRAL_CODE_RE.test("OLAYINKA2025")).toBe(true);
+    expect(REFERRAL_CODE_RE.test("OLAYINKA2025USD")).toBe(true);
     expect(REFERRAL_CODE_RE.test("AB-12")).toBe(false);
-    expect(REFERRAL_CODE_RE.test("ABCDEFGHIJKLM")).toBe(false);
+    expect(REFERRAL_CODE_RE.test("ABCDEFGHIJKLMNOPQ")).toBe(false);
   });
 });
 

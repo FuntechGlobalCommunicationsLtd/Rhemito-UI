@@ -23,7 +23,8 @@ import PageTitle from "@/components/layout/PageTitle";
 import api from "@/utils/apiClient";
 import { apiData, apiField } from "@/utils/apiResult";
 import { savePromoDraft } from "@/utils/promoCodeDraft";
-import { flagOn } from "@/utils/rewardsGate";
+import { referralCodeForCurrency } from "@/utils/referralStore";
+import { flagOn, normaliseRewardKindKey } from "@/utils/rewardsGate";
 import { toastrMsg } from "@/utils/toastrMsg";
 
 type RewardKind = {
@@ -79,10 +80,14 @@ const SYMBOLS: Record<string, string> = {
   EUR: "€",
   NGN: "₦",
   CAD: "C$",
-  GHS: "GH₵",
-  KES: "KSh ",
-  INR: "₹",
+  AUD: "A$",
   JPY: "¥",
+  CNY: "¥",
+  INR: "₹",
+  ZAR: "R",
+  KES: "KSh ",
+  GHS: "GH₵",
+  AED: "AED ",
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -209,6 +214,69 @@ const card = {
   p: "16px",
 };
 
+/**
+ * Formats the "New offer: Refer & Earn" announcement copy so referral notifications
+ * match the approved Refer & Earn reward wording.
+ */
+function formatOfferAnnouncementMessage(message: string, kind?: string | null): string {
+  const raw = String(message ?? "").trim();
+  if (!raw || (kind && kind !== "LIVE")) return raw;
+
+  const inviteMatch = raw.match(
+    /^Invite friends and get (.+?) each time they send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.(?:\s*Your friend gets (.+?) too\.)?$/i,
+  );
+  if (inviteMatch) {
+    const referrerAmount = inviteMatch[1];
+    const refereeAmount = inviteMatch[2];
+    return `Invite friends and get ${referrerAmount} each time they sign up via your link and complete a successful transaction.${
+      refereeAmount ? ` Your friend gets ${refereeAmount} too on sign-up.` : ""
+    }`;
+  }
+
+  const refereeOnlyMatch = raw.match(
+    /^Give friends (.+?) when they join with your link and send .+? or more(?:\s+to\s+[A-Za-z0-9]+)?\.$/i,
+  );
+  if (refereeOnlyMatch) {
+    return `Give friends ${refereeOnlyMatch[1]} on sign-up when they join via your link.`;
+  }
+
+  return raw;
+}
+
+const parseRewardKinds = (rows: unknown): RewardKind[] => {
+  if (!Array.isArray(rows) || rows.length === 0) return fallbackKinds;
+  if (rows.every((r) => typeof r === "string")) {
+    const enabledKeys = new Set(rows.map((r) => normaliseRewardKindKey(r)));
+    return fallbackKinds.map((fb) => ({
+      ...fb,
+      enabled: enabledKeys.has(fb.kind),
+    }));
+  }
+  return rows.map((row: any) => {
+    if (typeof row === "string") {
+      const key = normaliseRewardKindKey(row);
+      const fb = fallbackKinds.find((f) => f.kind === key);
+      return {
+        kind: key,
+        title: fb?.title || (key === "REFERRAL" ? "Refer & Earn" : key),
+        summary: fb?.summary || "",
+        enabled: true,
+      };
+    }
+    const key = normaliseRewardKindKey(textOf(row, "kind"));
+    const fb = fallbackKinds.find((f) => f.kind === key);
+    return {
+      kind: key,
+      title:
+        key === "REFERRAL"
+          ? "Refer & Earn"
+          : textOf(row, "title") || fb?.title || key,
+      summary: textOf(row, "summary") || fb?.summary || "",
+      enabled: flagOn(row, "enabled", true),
+    };
+  });
+};
+
 const parseCurrencyOffers = (
   data: any,
   defaultCode: string,
@@ -238,9 +306,14 @@ const parseCurrencyOffers = (
       const minTransfer = numOf(
         item,
         "minTransfer",
-        numOf(item, "minSendAmount", numOf(item, "qualifyingAmount", 0)),
+        numOf(
+          item,
+          "minSendAmount",
+          numOf(item, "qualifyingAmount", numOf(item, "floor", 0)),
+        ),
       );
-      let offerText = textOf(item, "offerText") || textOf(item, "headline");
+      let offerText =
+        textOf(item, "offerText") || textOf(item, "headline") || textOf(item, "text");
       if (!offerText && (referrerBonus > 0 || refereeBonus > 0)) {
         const corridorPart = rec ? ` to ${rec}` : "";
         const minPart = minTransfer > 0 ? ` when they send ${money(minTransfer, cur)}+${corridorPart}` : corridorPart;
@@ -284,11 +357,24 @@ const parseCurrencyOffers = (
         offerText:
           textOf(singleOfferObj, "offerText") ||
           textOf(singleOfferObj, "headline") ||
+          textOf(singleOfferObj, "text") ||
           defaultOfferText,
         capReached: flagOn(singleOfferObj, "capReached", defaultCapReached),
-        referrerBonus: numOf(singleOfferObj, "referrerBonus"),
-        refereeBonus: numOf(singleOfferObj, "refereeBonus"),
-        minTransfer: numOf(singleOfferObj, "minTransfer"),
+        referrerBonus: numOf(
+          singleOfferObj,
+          "referrerBonus",
+          numOf(singleOfferObj, "referrerReward", 0),
+        ),
+        refereeBonus: numOf(
+          singleOfferObj,
+          "refereeBonus",
+          numOf(singleOfferObj, "refereeReward", 0),
+        ),
+        minTransfer: numOf(
+          singleOfferObj,
+          "minTransfer",
+          numOf(singleOfferObj, "floor", 0),
+        ),
       },
     ];
   }
@@ -443,6 +529,11 @@ const RewardsPage = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [unused, setUnused] = useState<any[]>([]);
   const [promos, setPromos] = useState<any[]>([]);
+  const [promoSavingsTotal, setPromoSavingsTotal] = useState<number | null>(null);
+  const [latestOfferBanner, setLatestOfferBanner] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const [referrals, setReferrals] = useState<any[]>([]);
   const [joined, setJoined] = useState(0);
   const [referralsEarned, setReferralsEarned] = useState(0);
@@ -487,17 +578,7 @@ const RewardsPage = () => {
         if (cancelled || !data) return;
         const rows = apiField(data, "kinds");
         if (Array.isArray(rows) && rows.length) {
-          setKinds(
-            rows.map((row: any) => ({
-              kind: textOf(row, "kind"),
-              title:
-                textOf(row, "kind").toUpperCase() === "REFERRAL"
-                  ? "Refer & Earn"
-                  : textOf(row, "title"),
-              summary: textOf(row, "summary"),
-              enabled: flagOn(row, "enabled", true),
-            })),
-          );
+          setKinds(parseRewardKinds(rows));
         }
         const sources = listOf(data, "bySource");
         const cur = textOf(data, "balanceCurrency").toUpperCase() || "GBP";
@@ -533,11 +614,12 @@ const RewardsPage = () => {
             ? sum("available")
             : numOf(data, "availableBalance"),
         );
-        setEarned(apiField(data, "earned") == null ? sum("earned") : numOf(data, "earned"));
-        setUsed(apiField(data, "used") == null ? sum("used") : numOf(data, "used"));
-        setExpired(
-          apiField(data, "expired") == null ? sum("expired") : numOf(data, "expired"),
-        );
+        const rawEarned = apiField(data, "earned") ?? apiField(data, "earnedTotal");
+        const rawUsed = apiField(data, "used") ?? apiField(data, "usedTotal");
+        const rawExpired = apiField(data, "expired") ?? apiField(data, "expiredTotal");
+        setEarned(rawEarned == null ? sum("earned") : Number(rawEarned) || 0);
+        setUsed(rawUsed == null ? sum("used") : Number(rawUsed) || 0);
+        setExpired(rawExpired == null ? sum("expired") : Number(rawExpired) || 0);
         setUsedTransfers(
           apiField(data, "usedTransferCount") == null
             ? null
@@ -548,12 +630,56 @@ const RewardsPage = () => {
         );
         setBySource(sources);
         setHistory(listOf(data, "history"));
-        setUnused(listOf(data, "unused"));
-        setPromos(listOf(data, "promoSavings"));
-        setReferrals(listOf(data, "referrals"));
-        setJoined(numOf(data, "referralsJoined"));
-        setReferralsEarned(numOf(data, "referralsEarned"));
-        setReferralsTotal(numOf(data, "referralsTotal"));
+        const unusedList = listOf(data, "unused");
+        setUnused(unusedList.length > 0 ? unusedList : listOf(data, "unusedCredits"));
+
+        const rawPromoSavings = apiField(data, "promoSavings");
+        if (Array.isArray(rawPromoSavings)) {
+          setPromos(rawPromoSavings);
+          setPromoSavingsTotal(null);
+        } else {
+          setPromos(listOf(data, "promoRedemptions"));
+          setPromoSavingsTotal(
+            typeof rawPromoSavings === "number" && Number.isFinite(rawPromoSavings)
+              ? Math.abs(rawPromoSavings)
+              : null,
+          );
+        }
+
+        const rawReferrals = apiField(data, "referrals");
+        if (Array.isArray(rawReferrals)) {
+          setReferrals(rawReferrals);
+          setJoined(numOf(data, "referralsJoined"));
+          setReferralsEarned(numOf(data, "referralsEarned"));
+          setReferralsTotal(numOf(data, "referralsTotal"));
+        } else if (rawReferrals && typeof rawReferrals === "object") {
+          const refRows = listOf(rawReferrals, "data");
+          const refSummary = apiField<any>(rawReferrals, "summary") || {};
+          const totalEarnedMap = apiField<any>(refSummary, "totalEarned") || {};
+          const earnedForCur =
+            typeof totalEarnedMap === "object" && totalEarnedMap !== null
+              ? Number(totalEarnedMap[cur] ?? 0) || 0
+              : 0;
+          setReferrals(refRows);
+          setJoined(numOf(refSummary, "joined", refRows.length));
+          setReferralsEarned(numOf(refSummary, "earnedCount", 0));
+          setReferralsTotal(numOf(data, "referralsTotal", earnedForCur));
+        }
+
+        const rawLatestOffer = apiField<any>(data, "latestOffer");
+        if (rawLatestOffer && typeof rawLatestOffer === "object") {
+          const rawMsg = textOf(rawLatestOffer, "message");
+          if (rawMsg) {
+            setLatestOfferBanner({
+              title: textOf(rawLatestOffer, "title") || "New offer: Refer & Earn",
+              message: formatOfferAnnouncementMessage(
+                rawMsg,
+                textOf(rawLatestOffer, "kind") || "LIVE",
+              ),
+            });
+          }
+        }
+
         setDebt(numOf(data, "outstandingDebt"));
         setBlocked(flagOn(data, "bonusBlocked", false));
         setUnavailable(
@@ -577,25 +703,31 @@ const RewardsPage = () => {
   }, []);
 
   const activeOffer = currencyOffers[selectedOfferIndex] || null;
-  const activeCode = activeOffer?.referralCode || code;
+  const isMultiCurrency = currencyOffers.length > 1;
+  const rawActiveCode = activeOffer?.referralCode || code;
+  const activeCode =
+    isMultiCurrency && rawActiveCode && activeOffer?.currency
+      ? referralCodeForCurrency(rawActiveCode, activeOffer.currency)
+      : rawActiveCode;
   const activeOfferText = activeOffer?.offerText || offer;
   const capReached = Boolean(activeOffer?.capReached ?? topCapReached);
 
   // Dynamic origin share link so Staging (`rhemito-web-nextjs-dev.herokuapp.com`)
   // and Live (`www.rhemito.com`) generate their exact own `/ref/<CODE>` URLs automatically.
+  // Uses `referralCodeForCurrency` (`{BASE}{CUR}`) when multiple send-currency offers exist.
   const shareLink = useMemo(() => {
     if (typeof window === "undefined" || !activeCode) return "";
     const base = `${window.location.origin}/ref/${encodeURIComponent(activeCode)}`;
     const params = new URLSearchParams();
-    if (activeOffer?.receiveCurrency && currencyOffers.length > 1) {
+    if (activeOffer?.receiveCurrency && isMultiCurrency) {
       params.set("to", activeOffer.receiveCurrency);
     }
-    if (activeOffer?.ruleId && currencyOffers.length > 1) {
+    if (activeOffer?.ruleId && isMultiCurrency) {
       params.set("rule", String(activeOffer.ruleId));
     }
     const qs = params.toString();
     return qs ? `${base}?${qs}` : base;
-  }, [activeCode, activeOffer, currencyOffers.length]);
+  }, [activeCode, activeOffer, isMultiCurrency]);
 
   const handleOfferChange = (nextIdx: number) => {
     setSelectedOfferIndex(nextIdx);
@@ -624,14 +756,18 @@ const RewardsPage = () => {
     [bySource, currency],
   );
   const earnedTotal = earnedSources.reduce((sum, row) => sum + numOf(row, "earned"), 0);
-  const promoSaved = promos.reduce(
-    (sum, row) =>
-      sum +
-      (currencyCode(textOf(row, "currency") || currency) === currencyCode(currency)
-        ? Math.abs(numOf(row, "amount"))
-        : 0),
-    0,
-  );
+  const promoSaved =
+    promoSavingsTotal != null
+      ? promoSavingsTotal
+      : promos.reduce(
+          (sum, row) =>
+            sum +
+            (currencyCode(textOf(row, "currency") || currency) ===
+            currencyCode(currency)
+              ? Math.abs(numOf(row, "amount"))
+              : 0),
+          0,
+        );
   const bonusTotal =
     bonusCount || activity.filter((row) => row.kind === "earned").length;
   const visibleHistory = useMemo(() => {
@@ -855,6 +991,21 @@ const RewardsPage = () => {
           )}
           {tab !== "history" && tab !== "referrals" && (
             <Flex direction="column" gap="20px">
+              {!blocked && latestOfferBanner && (
+                <Box
+                  {...card}
+                  bg="blue.50"
+                  borderColor="blue.200"
+                  data-testid="refer-offer-announcement"
+                >
+                  <Text fontSize="sm" fontWeight="700" color="blue.900">
+                    {latestOfferBanner.title}
+                  </Text>
+                  <Text fontSize="sm" color="blue.800" mt="2px">
+                    {latestOfferBanner.message}
+                  </Text>
+                </Box>
+              )}
               {blocked && (
                 <Box {...card} borderColor="orange.200" bg="orange.50">
                   <Text>
@@ -954,6 +1105,66 @@ const RewardsPage = () => {
               {/* Refer & Earn Share Card on Overview */}
               {!blocked && referralEnabled && activeCode && (
                 <Box {...card} data-testid="refer-earn-share-card">
+                  {/* Currency Corridor Switcher Pills + Availability Label */}
+                  {currencyOffers.length > 0 && (
+                    <Box mb="12px">
+                      <Text
+                        fontSize="xs"
+                        fontWeight="600"
+                        color="gray.600"
+                        mb="6px"
+                        data-testid="refer-corridor-label"
+                      >
+                        Referrals are available for the following currency corridors:
+                      </Text>
+                      <Flex
+                        gap="8px"
+                        flexWrap="wrap"
+                        align="center"
+                        data-testid="refer-corridor-pills"
+                        aria-label="Select referral corridor rule"
+                      >
+                        {currencyOffers.map((o, idx) => {
+                          const isSelected = idx === selectedOfferIndex;
+                          const dest = o.receiveCurrency || "ALL";
+                          return (
+                            <Button
+                              key={`corridor-${o.ruleId ?? idx}-${o.currency}-${dest}`}
+                              type="button"
+                              size="sm"
+                              h="32px"
+                              px="14px"
+                              borderRadius="full"
+                              fontSize="xs"
+                              fontWeight="600"
+                              aria-pressed={isSelected}
+                              aria-label={`${o.currency} → ${dest}`}
+                              bg={isSelected ? "var(--clr1, #2e5bff)" : "gray.100"}
+                              color={isSelected ? "#fff" : "gray.700"}
+                              _hover={{
+                                opacity: isSelected ? 0.92 : 1,
+                                bg: isSelected ? "var(--clr1, #2e5bff)" : "gray.200",
+                              }}
+                              onClick={() => handleOfferChange(idx)}
+                            >
+                              {o.currency} ↔ {dest}
+                            </Button>
+                          );
+                        })}
+                      </Flex>
+                      {currencyOffers.length > 1 && (
+                        <Text
+                          fontSize="xs"
+                          color="gray.500"
+                          mt="4px"
+                          data-testid="refer-currency-hint"
+                        >
+                          Click a currency corridor to see its rewards
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+
                   <Flex
                     justify="space-between"
                     align={{ base: "flex-start", md: "center" }}
@@ -961,9 +1172,27 @@ const RewardsPage = () => {
                     gap="14px"
                   >
                     <Box flex="1">
-                      <Text fontWeight="700" fontSize="16px">
-                        Refer &amp; Earn
-                      </Text>
+                      <Flex align="center" gap="8px" flexWrap="wrap">
+                        <Text fontWeight="700" fontSize="16px">
+                          Refer &amp; Earn
+                        </Text>
+                        {activeCode && (
+                          <Text
+                            as="span"
+                            fontSize="xs"
+                            fontFamily="mono"
+                            fontWeight="700"
+                            color="var(--clr1)"
+                            bg="purple.50"
+                            px="8px"
+                            py="2px"
+                            borderRadius="md"
+                            data-testid="refer-active-code"
+                          >
+                            {activeCode}
+                          </Text>
+                        )}
+                      </Flex>
                       <Text fontSize="sm" color="gray.600" mt="2px">
                         {activeOfferText ||
                           "Share your personal invite link with friends to earn bonus credit."}
@@ -1020,6 +1249,111 @@ const RewardsPage = () => {
                       </Flex>
                     )}
                   </Flex>
+
+                  {/* Updated Refer & Earn Reward Breakdown Cards (You get / They get) */}
+                  {!capReached &&
+                    activeOffer &&
+                    (activeOffer.referrerBonus > 0 || activeOffer.refereeBonus > 0) && (
+                      <SimpleGrid
+                        columns={{
+                          base: 1,
+                          md:
+                            activeOffer.referrerBonus > 0 && activeOffer.refereeBonus > 0
+                              ? 2
+                              : 1,
+                        }}
+                        gap="12px"
+                        mt="14px"
+                      >
+                        {activeOffer.referrerBonus > 0 && (
+                          <Box
+                            border="1px solid"
+                            borderColor="gray.200"
+                            borderRadius="10px"
+                            p="12px"
+                            bg="gray.50"
+                          >
+                            <Text fontWeight="700" fontSize="15px" color="gray.900">
+                              You get{" "}
+                              {money(activeOffer.referrerBonus, activeOffer.currency)}
+                            </Text>
+                            <Text fontSize="13px" color="gray.600" mt="4px">
+                              When you invite friends and they complete their first
+                              successful transaction after signing up using your link
+                            </Text>
+                          </Box>
+                        )}
+                        {activeOffer.refereeBonus > 0 && (
+                          <Box
+                            border="1px solid"
+                            borderColor="gray.200"
+                            borderRadius="10px"
+                            p="12px"
+                            bg="gray.50"
+                          >
+                            <Text fontWeight="700" fontSize="15px" color="gray.900">
+                              They get{" "}
+                              {money(activeOffer.refereeBonus, activeOffer.currency)}
+                            </Text>
+                            <Text fontSize="13px" color="gray.600" mt="4px">
+                              When they sign up using your link
+                            </Text>
+                          </Box>
+                        )}
+                      </SimpleGrid>
+                    )}
+
+                  {/* Multi-Corridor Breakdown */}
+                  {currencyOffers.length > 1 && (
+                    <Box
+                      mt="14px"
+                      p="12px"
+                      borderRadius="10px"
+                      border="1px solid"
+                      borderColor="gray.200"
+                      bg="gray.50"
+                      data-testid="refer-corridor-rules-summary"
+                    >
+                      <Text
+                        fontSize="xs"
+                        fontWeight="700"
+                        textTransform="uppercase"
+                        letterSpacing="0.04em"
+                        color="gray.500"
+                        mb="8px"
+                      >
+                        Applicable referral rules by currency corridor
+                      </Text>
+                      <Flex direction="column" gap="6px">
+                        {currencyOffers.map((o, idx) => (
+                          <Flex
+                            key={`rule-summary-${o.ruleId ?? idx}-${o.currency}-${o.receiveCurrency || "ALL"}`}
+                            align="flex-start"
+                            gap="8px"
+                            fontSize="13px"
+                            color="gray.700"
+                          >
+                            <Badge
+                              colorScheme="blue"
+                              px="6px"
+                              py="2px"
+                              borderRadius="md"
+                              fontSize="11px"
+                              flexShrink={0}
+                              mt="2px"
+                            >
+                              {o.receiveCurrency
+                                ? `${o.currency} → ${o.receiveCurrency}`
+                                : `${o.currency} → ALL`}
+                            </Badge>
+                            <Text fontSize="13px" color="gray.700">
+                              {o.offerText}
+                            </Text>
+                          </Flex>
+                        ))}
+                      </Flex>
+                    </Box>
+                  )}
                 </Box>
               )}
 
