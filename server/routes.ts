@@ -5,6 +5,7 @@ import { demoModeEnabled } from "./config";
 import { registerPromoRoutes, startPromo } from "./promo";
 import { registerBonusRoutes, startBonus } from "./bonus";
 import { registerRewardsRoutes } from "./rewardsRoutes";
+import { registerFurpV1CompatRoutes } from "./furpV1CompatRoutes";
 import { captureDevice } from "./deviceId";
 import { registerAuthRoutes } from "./auth";
 import { registerInvoiceRoutes } from "./invoiceRoutes";
@@ -126,6 +127,7 @@ export async function registerRoutes(
   // Send Money transactions (server-owned store behind the wizard + Dashboard)
   registerSendMoneyRoutes(app);
   registerRewardsRoutes(app);
+  registerFurpV1CompatRoutes(app);
   // Received Payments (merged view of settled/in-flight money-in payments)
   registerPaymentsReceivedRoutes(app);
   // Promo codes live in Mito Money; the promo module forwards to it (server/promo, PROMO-RHEMITO spec).
