@@ -289,3 +289,43 @@
   2. **Live `furp02-staging` Hydration & Non-Regression:**
      - `GET /api/compliance/overview` (`server/complianceRoutes.ts`) fetches live `GET /api/v1/Account/profile` and `GET /api/v1/KYC/Status?api-version=2` from `furp02-staging.funtechcom.com` when a customer `furpAccessToken` is active (launching customer FURP `POST /api/v1/Journey` only when KYC action is required), and falls back cleanly to the signed-in / demo user's server-stored `authUsers` profile + Mito KYC Journey when local (zero hardcoded names per `REF-18`; `/kyc` & `/kyc/return` untouched).
   3. **Superseded Behaviour:** Legacy centered `compliance-verified-card` and `Refresh Status` / `Send Money` / `Back to Overview` buttons on `/compliance` superseded by `Direction A` reference layout (`2026-11-18`).
+
+---
+
+### `DEC-2026-11-18-DASHBOARD-REFER-COLLAPSIBLE-AND-SUMMARY-HOVER` — Premium Collapsible `Refer & earn` (`Direction 1A`) & Non-Zero `Account summary` Hover Border (`Direction 2A` + `Scope S1`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — explicitly replied `approved` & `push and merge` on `feature/dashboard-referral-and-summary-ux`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation + `@qa-verifier` PASS, `82/82` contracts, `335/335` Vitest, `168/168` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - `client/src/components/rewards/ReferEarnCard.tsx`
+  - `client/public/referral-gift-box.png` (alpha-matted transparent RGBA background + `bg-transparent` container)
+  - `client/src/pages/Dashboard.tsx`
+  - Tests: `tests/e2e/rewards.spec.js`, `tests/e2e/dashboard.spec.js`
+- **Summary:**
+  1. **`Refer & earn` Collapsible Section (`Direction 1A` — Unified Outer Shell + Pinned Top-Right Toggle + Actionable Collapsed Bar):**
+     - Open by default (`collapsed = false`) whenever a valid/applicable referral rule exists (`Boolean(offer) && !offer.cap_reached`; hidden when `!offer` per `REF-15`); manual collapse persisted per rule (`rhemito_refer_collapsed_${userId ?? "demo"}_${offer.rule_id}`) so any brand-new referral rule auto-opens, and `highlighted` (`OfferBanner`) auto-expands.
+     - Unified outer shell (`rounded-2xl border border-[#e6eef8] bg-white p-3.5 sm:p-4`) with persistent full-width header bar (`Refer & earn` + corridor pills left; `How it works` + `toggle-refer-earn-card` pinned at `100%` top-right in both states with `180°` rotating chevron and zero cursor teleportation).
+     - Smooth Framer Motion `AnimatePresence` + `motion.div` `height`/`opacity` choreography (`duration: 0.28`, `ease: [0.22, 1, 0.36, 1]`, respecting `useReducedMotion()`).
+     - Actionable collapsed bar (~58px single row) retaining Sentence-case stats (`Friends joined`, `Bonus earned`, or `"No referrals yet. Share your link to start earning."`), corridor & reward summary (`You <X> · Friend <Y>`), and 1-click `Copy link` + `Share` pills while preserving 100% of `REF-11..REF-23` contracts.
+  2. **`Account summary` Non-Zero Hover Border (`Direction 2A` + `Scope S1`):**
+     - Applies to interactive **`Wallet balance`** (`card-wallet-balance`, `#E5F1FE`) and **`Payment account`** (`card-collection-account`, `#E0EED6`) cards on Overview (`Total sent` and `/settings?tab=accounts` untouched).
+     - Reserves `border border-transparent` at rest (`0px` layout shift) and applies surface-harmonized chromatic hover borders + soft ambient glow + `-translate-y-[1px]` **only when the numeric value is `> 0`** (`Wallet balance`: `hover:border-[#5B9BF8]`; `Payment account`: `hover:border-[#58A96A]`; `0.00` remains `border-transparent` with no glow/lift).
+
+---
+
+### `DEC-2026-11-18-SEND-MONEY-RECIPIENT-LIST-REDESIGN` — `/send-money` Step 2 Recipient List Reference Layout (`Direction 3A`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — confirmed via reference screenshot + `push and merge` on `feature/dashboard-referral-and-summary-ux`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation + `@qa-verifier` PASS, `82/82` contracts, `335/335` Vitest, `168/168` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - `client/src/pages/SendMoney.tsx` (`currentStep === 2` recipient list, `mapBeneficiaryToRecipient`, & Step 3 network error resilience)
+  - `client/src/lib/sendMoney.ts` (`createSendMoneyTransaction` transient network retry)
+  - Tests: `tests/e2e/send_money.spec.js`
+- **Summary:**
+  1. **Reference 2-Line Recipient Row Layout (`Direction 3A` — Tailwind CSS Only, `PD-04` Harmonized):**
+     - Replaced Step 2 rainbow `AVATAR_COLORS`, multi-line colored `Acct:`/`Sort:`/`IBAN:`/`SWIFT:` pill chips, italic `"narration"` subline, and right-side currency code with clean `divide-y divide-[#efefee]` 2-line rows matching the uploaded reference screenshot:
+       - **Avatar (`44px`):** Soft ice-blue circle (`bg-[#DCEBFA] text-[#323130] text-[13px] sm:text-sm font-normal`) + bottom-right solid green dot (`bg-[#0E7A0D] w-2.5 h-2.5 rounded-full ring-[1.5px] ring-white`), harmonized across Step 2 `Recent Recipients` and search suggestions so recipient avatars stay visually consistent on the screen.
+       - **Left 2-Line Stack:** Semibold recipient name (`text-[15px] sm:text-base font-semibold text-[#111827]`) over muted bank/provider name (`text-[13px] sm:text-sm font-normal text-[#605E5C]`).
+       - **Right 2-Line Stack:** Dynamic teal delivery-method label (`#38A3A5`, `Bank deposit` / `Mobile money` / `Cash pickup` from `collectionMode` / `serviceCode` / `deliveryMethod`, harmonized with `PD-04` Sentence case) over proportional `tabular-nums` account identifier (`text-[13px] sm:text-sm font-normal text-[#605E5C] tabular-nums` using `r.account || compactIban(r.iban) || r.mobileNo || r.sortCode || r.currency`).
+  2. **Non-Regression:** Step 3 (`Recipient details`) and Right Sticky Summary continue to prefill and display all saved fields (`account`, `sortCode`, `iban`, `swift`, `narration`, `currency`), and keyboard/click selection (`setSelectedRecipient(r); handleNext()`) remains unchanged.
+  3. **Superseded Behaviour:** Earlier Step 2 recipient row rainbow avatar colors, `Acct:/Sort:/IBAN:/SWIFT:` chips, italic narration subline, and right-side `NGN` currency line superseded by `Direction 3A` (`2026-11-18`).

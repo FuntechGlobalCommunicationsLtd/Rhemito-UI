@@ -243,7 +243,7 @@ test.describe('Support Module Journeys', () => {
         await page.getByTestId('button-submit-ticket-reply').click();
 
         // Toast feedback
-        await expect(page.getByText(/Ticket updated successfully/i)).toBeVisible();
+        await expect(page.getByText(/Ticket updated successfully/i).first()).toBeVisible();
     });
 
     test('Create ticket journey: validates mandatory fields, file upload/removal, and creates ticket', async ({ page }) => {
@@ -323,7 +323,7 @@ test.describe('Support Module Journeys', () => {
         await page.getByTestId('button-submit-ticket').click();
 
         // Confirm toast & navigation
-        await expect(page.getByText(/Your enquiry has been successfully submitted/i)).toBeVisible();
+        await expect(page.getByText(/Your enquiry has been successfully submitted/i).first()).toBeVisible();
         await expect(page).toHaveURL(/\/support\/my-tickets/);
     });
 });

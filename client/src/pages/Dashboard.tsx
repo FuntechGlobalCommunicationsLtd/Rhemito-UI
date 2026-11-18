@@ -1059,12 +1059,12 @@ export default function Dashboard() {
       .reduce((sum, tx) => sum + Number(tx.sendAmount || 0), 0);
     return formatAccountAmount(totalSentMajor);
   }, [isDemoUser, sendMoneyQuery.data]);
-  const walletBalanceFormatted = isDemoUser
-    ? formatAccountAmount(DEMO_GBP_WALLET_BALANCE)
-    : "0.00";
-  const collectionBalanceFormatted = isDemoUser
-    ? formatAccountAmount(DEMO_GBP_COLLECTION_BALANCE)
-    : "0.00";
+  const walletBalanceAmount = isDemoUser ? DEMO_GBP_WALLET_BALANCE : 0;
+  const collectionBalanceAmount = isDemoUser ? DEMO_GBP_COLLECTION_BALANCE : 0;
+  const walletBalanceFormatted = formatAccountAmount(walletBalanceAmount);
+  const collectionBalanceFormatted = formatAccountAmount(collectionBalanceAmount);
+  const isWalletNonZero = walletBalanceAmount > 0;
+  const isCollectionNonZero = collectionBalanceAmount > 0;
 
   const searchLower = search.trim().toLowerCase();
   const searchedRows = useMemo(() => {
@@ -1304,7 +1304,11 @@ export default function Dashboard() {
                   setLocation("/overview/collectionaccount?tab=wallet");
                 }
               }}
-              className="rounded-xl bg-[#E5F1FE] px-5 py-4 flex flex-col justify-between min-h-[82px] cursor-pointer transition-shadow hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2e5bff]"
+              className={cn(
+                "rounded-xl bg-[#E5F1FE] border border-transparent px-5 py-4 flex flex-col justify-between min-h-[82px] cursor-pointer transition-[border-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:hover:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2e5bff]",
+                isWalletNonZero &&
+                  "hover:border-[#5B9BF8] hover:shadow-[0_8px_20px_-6px_rgba(46,91,255,0.16),0_0_0_1px_rgba(91,155,248,0.22)] hover:-translate-y-[1px]",
+              )}
             >
               <span className="text-xs font-normal text-[#605E5C]">
                 Wallet balance
@@ -1341,7 +1345,11 @@ export default function Dashboard() {
                   setLocation("/overview/collectionaccount");
                 }
               }}
-              className="rounded-xl bg-[#E0EED6] px-5 py-4 flex flex-col justify-between min-h-[82px] cursor-pointer transition-shadow hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2e5bff]"
+              className={cn(
+                "rounded-xl bg-[#E0EED6] border border-transparent px-5 py-4 flex flex-col justify-between min-h-[82px] cursor-pointer transition-[border-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:hover:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2e5bff]",
+                isCollectionNonZero &&
+                  "hover:border-[#58A96A] hover:shadow-[0_8px_20px_-6px_rgba(59,143,82,0.16),0_0_0_1px_rgba(88,169,106,0.22)] hover:-translate-y-[1px]",
+              )}
             >
               <span className="text-xs font-normal text-[#605E5C]">
                 Payment account
@@ -1732,6 +1740,7 @@ export default function Dashboard() {
                 onRetry={() => rewards.refetch()}
                 highlighted={referHighlighted}
                 defaultCollapsed={false}
+                userId={!isAuthLoading ? (activeUser?.id ?? rewards.data?.customer?.id ?? "demo") : undefined}
               />
             </div>
           </motion.div>

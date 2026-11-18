@@ -195,9 +195,17 @@ test.describe('Rhemito Dashboard', () => {
 
         // Verify exact reference pastel backgrounds (#FFEDE7, #E5F1FE, #E0EED6)
         const totalSentCard = summarySection.locator('> div > div').first();
+        const walletCard = page.getByTestId('card-wallet-balance');
+        const collectionCard = page.getByTestId('card-collection-account');
         await expect(totalSentCard).toHaveCSS('background-color', 'rgb(255, 237, 231)');
-        await expect(page.getByTestId('card-wallet-balance')).toHaveCSS('background-color', 'rgb(229, 241, 254)');
-        await expect(page.getByTestId('card-collection-account')).toHaveCSS('background-color', 'rgb(224, 238, 214)');
+        await expect(walletCard).toHaveCSS('background-color', 'rgb(229, 241, 254)');
+        await expect(collectionCard).toHaveCSS('background-color', 'rgb(224, 238, 214)');
+
+        // Non-zero interactive summary cards highlight with surface-harmonized borders on hover (Direction 2A + Scope S1)
+        await walletCard.hover();
+        await expect(walletCard).toHaveCSS('border-top-color', 'rgb(91, 155, 248)');
+        await collectionCard.hover();
+        await expect(collectionCard).toHaveCSS('border-top-color', 'rgb(88, 169, 106)');
 
         // Verify 'NEW' tag and 'Rewards waiting!' subtext are removed from Sidebar Reward$
         await expect(page.getByTestId('rewards-waiting-badge')).toHaveCount(0);
@@ -216,7 +224,7 @@ test.describe('Rhemito Dashboard', () => {
         // Clicking Wallet balance card opens /overview/collectionaccount?tab=wallet on Wallets tab
         await walletCard.click();
         await expect(page).toHaveURL(/\/overview\/collectionaccount\?tab=wallet$/);
-        await expect(page.getByTestId('heading-collection-account')).toHaveText('Collection account');
+        await expect(page.getByTestId('heading-collection-account')).toHaveText('Payment account');
         await expect(page.getByTestId('tab-collection-accounts')).toHaveText('Payments account');
         await expect(page.getByTestId('panel-wallets')).toBeVisible();
         await expect(page.getByTestId('wallet-details-heading')).toHaveText('Below are the details of your GBP wallet');

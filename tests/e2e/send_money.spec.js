@@ -68,8 +68,15 @@ test.describe('Rhemito Send Money Flow', () => {
         await page.getByPlaceholder('0.00').first().fill('500');
         await page.getByRole('button', { name: 'Continue' }).click();
 
-        // Step 2: Recipient
+        // Step 2: Recipient (Direction 3A reference 2-line recipient row layout)
         await expect(page.getByText(/Who are you sending to/i)).toBeVisible();
+        const recipientList = page.getByTestId('send-money-recipient-list');
+        await expect(recipientList).toBeVisible();
+        const row = recipientList.getByTestId('recipient-row-11111111-2222-3333-4444-555555555555');
+        await expect(row).toContainText('Akshita');
+        await expect(row).toContainText('United Bank for Africa Plc (UBA)');
+        await expect(row).toContainText('Bank deposit');
+        await expect(row).toContainText('1018316888');
 
         // Click New Recipient
         await page.getByRole('button', { name: 'New Recipient' }).click();

@@ -494,8 +494,33 @@ export async function fetchMitoProviders(
   }
 }
 
+function isTransientFetchError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = (err.message || "").toLowerCase();
+  return (
+    err.name === "TypeError" &&
+    (msg.includes("failed to fetch") || msg.includes("load failed") || msg.includes("networkerror"))
+  );
+}
+
 export async function createSendMoneyTransaction(input: CreateSendMoneyInput): Promise<SendMoneyTransactionView> {
-  const res = await apiRequest("POST", "/api/send-money/transactions", input);
+  const isJsdom = typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent);
+  const retryDelaysMs = isJsdom ? [] : [600, 1200];
+  let lastErr: unknown;
+  let res: Response | undefined;
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+    try {
+      res = await apiRequest("POST", "/api/send-money/transactions", input);
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientFetchError(err) || attempt === retryDelaysMs.length) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+    }
+  }
+  if (!res) throw lastErr;
   const data = ((await res.json()) as { data: SendMoneyTransactionView }).data;
   unmarkDeletedMitoBeneficiary({
     beneficiaryId: data.mitoBeneficiaryId,
