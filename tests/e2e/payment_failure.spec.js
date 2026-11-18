@@ -46,7 +46,9 @@ test.describe('Send Money — a payment that fails', () => {
         await page.getByPlaceholder('0.00').first().fill('100');
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await page.getByText('Instant Pay By Bank').click();

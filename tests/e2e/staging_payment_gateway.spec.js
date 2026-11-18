@@ -64,7 +64,9 @@ test.describe('Staging Payment Gateway & Recent Transactions Sorting E2E', () =>
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await expect(page.getByText('How would you like to pay?')).toBeVisible({ timeout: 15000 });
@@ -177,7 +179,9 @@ test.describe('Staging Payment Gateway & Recent Transactions Sorting E2E', () =>
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await expect(page.getByText('How would you like to pay?')).toBeVisible({ timeout: 15000 });
@@ -293,7 +297,9 @@ test.describe('Staging Payment Gateway & Recent Transactions Sorting E2E', () =>
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await expect(page.getByText('How would you like to pay?')).toBeVisible({ timeout: 15000 });
@@ -401,7 +407,9 @@ test.describe('Staging Payment Gateway & Recent Transactions Sorting E2E', () =>
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
 
         await expect(page.getByText('How would you like to pay?')).toBeVisible({ timeout: 15000 });

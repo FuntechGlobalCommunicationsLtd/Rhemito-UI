@@ -66,7 +66,9 @@ test.describe('Send Money — promo code and payment method', () => {
 
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.getByText('Akshita', { exact: true }).first().click();
-        await expect(page.getByText('Recipient Details').first()).toBeVisible();
+        await expect(page.getByText(/Recipient details/i).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Continue' }).click();
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 10000 });
         await page.getByRole('button', { name: 'Continue' }).click();
         await page.waitForTimeout(500);
         const before = validations;

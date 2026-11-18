@@ -38,6 +38,13 @@ import {
   getMitoBeneficiaries,
   getDeletedMitoBeneficiariesSnapshot,
   getMitoBeneficiaryRequirements,
+  getMitoBeneficiaryRequirementsWithFallback,
+  getMitoProvinceStates,
+  getMitoProvidersDetailed,
+  isLocalMitoBeneficiaryId,
+  validateMitoBeneficiaryNickname,
+  verifyMitoBankingDetails,
+  FALLBACK_PROVIDER_ID_PREFIX,
   getMitoJourneyStatus,
   getMitoLookupTypes,
   getMitoProviders,
@@ -152,6 +159,15 @@ function toView(tx: SendMoneyTransaction): SendMoneyTransactionView {
     ...(tx.otherReason ? { otherReason: tx.otherReason } : {}),
     ...(tx.sourceOfFundCode ? { sourceOfFundCode: tx.sourceOfFundCode } : {}),
     ...(tx.paymentNarration ? { paymentNarration: tx.paymentNarration } : {}),
+    ...(typeof tx.isInternational === "boolean" ? { isInternational: tx.isInternational } : {}),
+    ...(tx.dob ? { dob: tx.dob } : {}),
+    ...(tx.gender ? { gender: tx.gender } : {}),
+    ...(tx.addressLine2 ? { addressLine2: tx.addressLine2 } : {}),
+    ...(tx.otherRelationship ? { otherRelationship: tx.otherRelationship } : {}),
+    ...(tx.bankCode ? { bankCode: tx.bankCode } : {}),
+    ...(tx.clabe ? { clabe: tx.clabe } : {}),
+    ...(tx.cnaps ? { cnaps: tx.cnaps } : {}),
+    ...(tx.accountHolderName ? { accountHolderName: tx.accountHolderName } : {}),
     status: tx.status,
     createdAt: tx.createdAt.toISOString(),
     paidAt: tx.paidAt ? tx.paidAt.toISOString() : null,
@@ -241,6 +257,22 @@ async function resolveCheckoutPaymentIdFromTx(tx: SendMoneyTransaction): Promise
 
 export function registerSendMoneyRoutes(app: Express): void {
   /**
+   * Key under which a sender's beneficiaries live: their Mito user id when Mito is configured, otherwise
+   * (offline / unconfigured) their Rhemito user id, so locally saved recipients stay listable.
+   */
+  async function resolveBeneficiaryOwnerKey(userId: string, explicitMitoUserId?: string | null): Promise<string | null> {
+    if (!isMitoRetailConfigured()) return userId;
+    const explicit = explicitMitoUserId ? String(explicitMitoUserId).trim() : "";
+    if (explicit) return explicit;
+    const authUser = await storage.getAuthUserById(userId);
+    if (!authUser) return userId;
+    const synced =
+      getMitoUserIdForUser(authUser.id, authUser.email) ||
+      (await registerOrSyncMitoRetailUser(authUser).catch(() => null));
+    return synced || userId;
+  }
+
+  /**
    * Step 1: Live corridor rate from `GET {{base_url}}/api/v1/mito/Exchange/affiliateRates`.
    */
   app.get("/api/send-money/mito/affiliate-rates", async (req: Request, res: Response) => {
@@ -318,7 +350,7 @@ export function registerSendMoneyRoutes(app: Express): void {
         String(req.query.collectionMode || req.query.service || "BANKACCOUNT"),
       );
 
-      const providers = await getMitoProviders({
+      const detailed = await getMitoProvidersDetailed({
         countryIso3,
         currencyCode,
         serviceCode,
@@ -331,7 +363,11 @@ export function registerSendMoneyRoutes(app: Express): void {
           currencyCode,
           serviceCode,
           collectionMode,
-          providers,
+          configured: isMitoRetailConfigured(),
+          source: detailed.source,
+          providers: detailed.providers,
+          local: detailed.local,
+          international: detailed.international,
         },
       });
     } catch (err) {
@@ -357,27 +393,32 @@ export function registerSendMoneyRoutes(app: Express): void {
         String(req.query.collectionMode || req.query.service || "BANKACCOUNT"),
       );
 
+      const isInternationalRaw = String(req.query.isInternational ?? req.query.international ?? "").trim().toLowerCase();
+      const isInternational: boolean | undefined =
+        isInternationalRaw === "true" ? true : isInternationalRaw === "false" ? false : undefined;
+
       let providerId = String(req.query.providerId || "").trim();
       if (!providerId) {
-        const providers = await getMitoProviders({
+        const detailed = await getMitoProvidersDetailed({
           countryIso3: toCountry,
           currencyCode: toCurrencyCode,
           serviceCode: "MONEYTRANSFER",
           collectionMode,
         });
-        providerId = providers[0]?.providerId || "";
+        providerId = isInternational
+          ? detailed.international[0]?.providerId || detailed.providers[0]?.providerId || ""
+          : detailed.local[0]?.providerId || detailed.providers[0]?.providerId || "";
       }
 
-      const requirements = providerId
-        ? await getMitoBeneficiaryRequirements({
-            providerId,
-            toCountry,
-            toCurrencyCode,
-            entityType,
-            serviceCode: "MONEYTRANSFER",
-            collectionMode,
-          })
-        : [];
+      const { requirements, source } = await getMitoBeneficiaryRequirementsWithFallback({
+        providerId,
+        toCountry,
+        toCurrencyCode,
+        entityType,
+        serviceCode: "MONEYTRANSFER",
+        collectionMode,
+        isInternational,
+      });
 
       return res.json({
         data: {
@@ -386,9 +427,84 @@ export function registerSendMoneyRoutes(app: Express): void {
           toCurrencyCode,
           entityType,
           collectionMode,
+          isInternational: Boolean(isInternational),
+          source,
           requirements,
         },
       });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * "Search bank details" — `POST {{base_url}}/api/v1/Bank/GetBankingDetails` (ISO3 `countryCode`).
+   * Always 200 with `canContinue: true` unless the request itself is malformed.
+   */
+  app.post("/api/send-money/mito/bank-details", async (req: Request, res: Response) => {
+    try {
+      requireStrictAuth(req);
+      const body = (req.body ?? {}) as Record<string, any>;
+      const countryRaw = String(body.countryIso3 || "").trim();
+      const paramRaw = body.param;
+      const paramsValid =
+        Array.isArray(paramRaw) &&
+        paramRaw.length > 0 &&
+        paramRaw.every(
+          (p: any) => p && typeof p.parameter === "string" && p.parameter.trim() && (typeof p.value === "string" || typeof p.value === "number"),
+        );
+      if (!countryRaw || !paramsValid) {
+        throw new SendMoneyError(400, "VALIDATION_ERROR", "Country and bank detail parameters are required.");
+      }
+      const result = await verifyMitoBankingDetails({
+        international: Boolean(body.international ?? body.isInternational),
+        countryIso3: toCountryIso3(countryRaw),
+        providerId: body.providerId ? String(body.providerId).trim() : undefined,
+        param: paramRaw.map((p: any) => ({ parameter: String(p.parameter).trim(), value: String(p.value).trim() })),
+      });
+      return res.json({ data: result });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * Live nickname rules + availability (min 5 letters/numbers, unique per sender) via
+   * `GET {{base_url}}/api/v1/mito/Beneficiaries/ValidateBeneficiaryNickName`.
+   */
+  app.get("/api/send-money/mito/validate-nickname", async (req: Request, res: Response) => {
+    try {
+      const userId = requireStrictAuth(req);
+      const nickName = String(req.query.nickName ?? req.query.nickname ?? "");
+      const excludeBeneficiaryId = req.query.beneficiaryId ? String(req.query.beneficiaryId).trim() : undefined;
+      const ownerKey = await resolveBeneficiaryOwnerKey(userId, null);
+      const result = await validateMitoBeneficiaryNickname({
+        nickName,
+        userId: ownerKey ?? undefined,
+        excludeBeneficiaryId,
+      });
+      return res.json({
+        data: {
+          valid: result.valid,
+          available: result.available,
+          source: result.source,
+          message: result.message,
+        },
+      });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * States / provinces for a country from `GET {{base_url}}/api/v1/Static/ProvinceState?countryiso3=...`.
+   */
+  app.get("/api/send-money/mito/provinces", async (req: Request, res: Response) => {
+    try {
+      const countryRaw = String(req.query.countryIso3 || req.query.country || "").trim();
+      const countryIso3 = countryRaw ? toCountryIso3(countryRaw) : "";
+      const provinces = countryIso3 ? await getMitoProvinceStates(countryIso3) : [];
+      return res.json({ data: { provinces } });
     } catch (err) {
       handleError(res, err);
     }
@@ -400,16 +516,10 @@ export function registerSendMoneyRoutes(app: Express): void {
   app.get("/api/send-money/mito/beneficiaries", async (req: Request, res: Response) => {
     try {
       const userId = requireStrictAuth(req);
-      let mitoUserId: string | null = req.query.userId ? String(req.query.userId).trim() : null;
-
-      if (!mitoUserId) {
-        const authUser = await storage.getAuthUserById(userId);
-        if (authUser) {
-          mitoUserId =
-            getMitoUserIdForUser(authUser.id, authUser.email) ||
-            (await registerOrSyncMitoRetailUser(authUser));
-        }
-      }
+      const mitoUserId: string | null = await resolveBeneficiaryOwnerKey(
+        userId,
+        req.query.userId ? String(req.query.userId) : null,
+      );
 
       if (!mitoUserId) {
         return res.json({ data: { userId: null, configured: isMitoRetailConfigured(), beneficiaries: [] } });
@@ -509,21 +619,13 @@ export function registerSendMoneyRoutes(app: Express): void {
       const userId = requireStrictAuth(req);
       const body = (req.body ?? {}) as Record<string, any>;
 
-      if (!isMitoRetailConfigured()) {
-        return res.status(201).json({ data: { beneficiaryId: null, configured: false } });
-      }
-
-      let mitoUserId: string | null = body.userId ? String(body.userId).trim() : null;
+      const mitoConfigured = isMitoRetailConfigured();
+      const mitoUserId: string | null = await resolveBeneficiaryOwnerKey(
+        userId,
+        body.userId ? String(body.userId) : null,
+      );
       if (!mitoUserId) {
-        const authUser = await storage.getAuthUserById(userId);
-        if (authUser) {
-          mitoUserId =
-            getMitoUserIdForUser(authUser.id, authUser.email) ||
-            (await registerOrSyncMitoRetailUser(authUser));
-        }
-      }
-      if (!mitoUserId) {
-        return res.status(201).json({ data: { beneficiaryId: null, configured: true } });
+        return res.status(201).json({ data: { beneficiaryId: null, configured: mitoConfigured } });
       }
 
       const rawCurrency = String(body.currencyIso || body.currency || "NGN").trim().toUpperCase();
@@ -542,13 +644,15 @@ export function registerSendMoneyRoutes(app: Express): void {
 
       let providerId = String(body.providerId || "").trim();
       let providerCode = body.providerCode ? String(body.providerCode).trim() : undefined;
-      if (!providerId) {
-        const providers = await getMitoProviders({
+      const providerIsSynthetic = providerId.startsWith(FALLBACK_PROVIDER_ID_PREFIX);
+      if (!providerId || (providerIsSynthetic && mitoConfigured)) {
+        const detailedProviders = await getMitoProvidersDetailed({
           countryIso3,
           currencyCode: rawCurrency,
           serviceCode: "MONEYTRANSFER",
           collectionMode,
         });
+        const providers = detailedProviders.providers;
         const bankSearch = String(body.bankName || "").trim().toLowerCase();
         const matched =
           (bankSearch &&
@@ -558,14 +662,14 @@ export function registerSendMoneyRoutes(app: Express): void {
                 p.providerName.toLowerCase().includes(bankSearch) ||
                 bankSearch.includes(p.providerName.toLowerCase()),
             )) ||
-          providers[0];
+          (!providerIsSynthetic ? providers[0] : undefined);
         if (matched) {
           providerId = matched.providerId;
           providerCode = matched.providerCode;
         }
       }
 
-      if (!providerId) {
+      if (!providerId && mitoConfigured) {
         throw new SendMoneyError(
           400,
           "PROVIDER_REQUIRED",
@@ -576,6 +680,10 @@ export function registerSendMoneyRoutes(app: Express): void {
       }
 
       const resolvedMobile = String(body.mobileNo || (collectionMode === "MOBILEMONEY" ? body.accountNumber || "" : "")).trim();
+      const optStr = (v: unknown): string | undefined => {
+        const s = v === undefined || v === null ? "" : String(v).trim();
+        return s ? s : undefined;
+      };
       const created = await createMitoBeneficiary({
         userId: mitoUserId,
         serviceCode: "MONEYTRANSFER",
@@ -598,8 +706,29 @@ export function registerSendMoneyRoutes(app: Express): void {
         iban: body.iban ? String(body.iban).trim() : undefined,
         bicSwift: body.swift || body.bicSwift ? String(body.swift || body.bicSwift).trim() : undefined,
         relationship: String(body.relationship || (isBusiness ? "BUSINESS" : "FAMILY")).toUpperCase(),
-        beneficiaryNickname: body.nickName ? String(body.nickName).trim() : undefined,
+        beneficiaryNickname: optStr(body.nickName ?? body.beneficiaryNickname),
         mobileNo: resolvedMobile || undefined,
+        relationId: optStr(body.relationId),
+        otherRelation: optStr(body.otherRelation ?? body.otherRelationship),
+        reasonId: optStr(body.reasonId),
+        otherReason: optStr(body.otherReason),
+        address: optStr(body.address),
+        addressLine2: optStr(body.addressLine2),
+        city: optStr(body.city),
+        postcode: optStr(body.postcode),
+        stateOrProvince: optStr(body.stateOrProvince ?? body.state),
+        dob: optStr(body.dob),
+        gender: optStr(body.gender),
+        aba: optStr(body.aba),
+        ifsc: optStr(body.ifsc),
+        bsbCode: optStr(body.bsbCode),
+        branchCode: optStr(body.branchCode),
+        bankCode: optStr(body.bankCode),
+        clabe: optStr(body.clabe),
+        cnaps: optStr(body.cnaps),
+        narration: optStr(body.narration),
+        isInternational: body.isInternational === undefined ? undefined : Boolean(body.isInternational),
+        accountHolderName: optStr(body.accountHolderName),
       });
 
       return res.status(201).json({
@@ -607,7 +736,8 @@ export function registerSendMoneyRoutes(app: Express): void {
           beneficiaryId: created?.beneficiaryId ?? null,
           providerId: created?.providerId ?? providerId,
           createdNew: created?.createdNew ?? false,
-          configured: true,
+          configured: mitoConfigured,
+          ...(created?.localOnly ? { localOnly: true } : {}),
         },
       });
     } catch (err) {
@@ -668,6 +798,10 @@ export function registerSendMoneyRoutes(app: Express): void {
         mitoUserId = getMitoUserIdForUser(authUser.id, authUser.email) || null;
       }
 
+      const optStr = (v: unknown): string | undefined => {
+        const s = v === undefined || v === null ? "" : String(v).trim();
+        return s ? s : undefined;
+      };
       const rawCountry = String(body.countryIso3 || body.country || "").trim();
       const rawCurrency = String(body.currency || "NGN").trim().toUpperCase();
       const countryIso3 = rawCountry
@@ -711,6 +845,33 @@ export function registerSendMoneyRoutes(app: Express): void {
             : collectionMode === "MOBILEMONEY"
               ? String(body.accountNumber || "").replace(/\s+/g, "")
               : undefined,
+        beneficiaryNickname:
+          body.nickName !== undefined || body.beneficiaryNickname !== undefined
+            ? String(body.nickName ?? body.beneficiaryNickname ?? "").trim()
+            : undefined,
+        address: optStr(body.address),
+        addressLine2: optStr(body.addressLine2),
+        city: optStr(body.city),
+        postcode: optStr(body.postcode),
+        stateOrProvince: optStr(body.stateOrProvince ?? body.state),
+        relationId: optStr(body.relationId),
+        otherRelation: optStr(body.otherRelation ?? body.otherRelationship),
+        reasonId: optStr(body.reasonId),
+        otherReason: optStr(body.otherReason),
+        narration: optStr(body.narration),
+        aba: optStr(body.aba),
+        ifsc: optStr(body.ifsc),
+        bsbCode: optStr(body.bsbCode),
+        branchCode: optStr(body.branchCode),
+        bankCode: optStr(body.bankCode),
+        clabe: optStr(body.clabe),
+        cnaps: optStr(body.cnaps),
+        nationalityCountryIso3: optStr(body.nationalityCountryIso3),
+        birthCountryIso3: optStr(body.birthCountryIso3),
+        dob: optStr(body.dob),
+        gender: optStr(body.gender),
+        isInternational: body.isInternational === undefined ? undefined : Boolean(body.isInternational),
+        accountHolderName: optStr(body.accountHolderName),
       });
 
       return res.json({ data: { updated: true, beneficiaryId, beneficiary: updated } });
@@ -724,7 +885,7 @@ export function registerSendMoneyRoutes(app: Express): void {
    */
   app.get("/api/send-money/mito/lookups", async (_req: Request, res: Response) => {
     try {
-      const lookups = await getMitoLookupTypes("reason,source-of-funds,relationships");
+      const lookups = await getMitoLookupTypes("reason,source-of-funds,relationships").catch(() => ({}));
       return res.json({ data: lookups });
     } catch (err) {
       handleError(res, err);
@@ -848,16 +1009,17 @@ export function registerSendMoneyRoutes(app: Express): void {
       );
       let providerId = String(body.providerId || "").trim();
       if (!providerId) {
-        const providers = await getMitoProviders({
+        const detailed = await getMitoProvidersDetailed({
           countryIso3: toCountry,
           currencyCode: toCurrency,
           serviceCode: "MONEYTRANSFER",
           collectionMode,
         });
-        providerId = providers[0]?.providerId || "";
+        providerId = detailed.providers[0]?.providerId || "";
       }
 
-      const result = providerId
+      const canCallLiveRate = Boolean(providerId && !providerId.startsWith(FALLBACK_PROVIDER_ID_PREFIX));
+      const result = canCallLiveRate
         ? await lockMitoExchangeRate({
             userId: mitoUserId,
             collectionMode,
@@ -869,7 +1031,7 @@ export function registerSendMoneyRoutes(app: Express): void {
             direction: body.direction === "R" ? "R" : "S",
             providerId,
             returnUrl: body.returnUrl ? String(body.returnUrl).trim() : undefined,
-          })
+          }).catch(() => null)
         : null;
 
       return res.json({
@@ -1200,10 +1362,12 @@ export function registerSendMoneyRoutes(app: Express): void {
       const reference = formatDocumentNumber("TXN", await storage.nextSendMoneySequence(), yearMonth);
 
       let mitoUserId: string | null = null;
-      let mitoBeneficiaryId: string | null = input.beneficiaryId ?? null;
+      let mitoBeneficiaryId: string | null =
+        input.beneficiaryId && !isLocalMitoBeneficiaryId(input.beneficiaryId) ? input.beneficiaryId : null;
       let mitoBeneficiaryCreated = false;
-      let mitoProviderId: string | null = input.providerId ?? null;
-      let mitoProviderCode: string | null = input.providerCode ?? null;
+      const inputProviderIsSynthetic = Boolean(input.providerId && input.providerId.startsWith(FALLBACK_PROVIDER_ID_PREFIX));
+      let mitoProviderId: string | null = inputProviderIsSynthetic ? null : input.providerId ?? null;
+      let mitoProviderCode: string | null = inputProviderIsSynthetic ? null : input.providerCode ?? null;
       let mitoRateId: string | null = input.affiliateRateId ?? null;
       let mitoKycUrl: string | null = null;
       let mitoIsTransactionAllowed: boolean | null = null;
@@ -1227,12 +1391,12 @@ export function registerSendMoneyRoutes(app: Express): void {
         try {
           const authUser = await storage.getAuthUserById(userId);
           if (authUser) {
-            mitoUserId =
+            const authUserOwner =
               getMitoUserIdForUser(authUser.id, authUser.email) ||
-              (await registerOrSyncMitoRetailUser(authUser)) ||
-              (DEFAULT_MITO_SENDER_USER_ID || null);
+              (await registerOrSyncMitoRetailUser(authUser).catch(() => null));
+            mitoUserId = authUserOwner || (DEFAULT_MITO_SENDER_USER_ID || userId);
           } else {
-            mitoUserId = DEFAULT_MITO_SENDER_USER_ID || null;
+            mitoUserId = DEFAULT_MITO_SENDER_USER_ID || userId;
           }
 
           const sendCurrency = sendCurrencyUpper;
@@ -1246,14 +1410,15 @@ export function registerSendMoneyRoutes(app: Express): void {
           resolvedSendCountryIso3 = fromCountry;
           const collectionMode = serviceToMitoCollectionMode(input.service);
 
-          // 1. Resolve provider (providerCode & providerId for the beneficiary bank) from GET /api/v1/mito/Lookups/provider
+          // 1. Resolve provider (providerCode & providerId for the beneficiary bank)
           if (!mitoProviderId || !mitoProviderCode) {
-            const providers = await getMitoProviders({
+            const detailedProviders = await getMitoProvidersDetailed({
               countryIso3: toCountry,
               currencyCode: receiveCurrency,
               serviceCode: "MONEYTRANSFER",
               collectionMode,
             });
+            const providers = detailedProviders.providers;
             const bankSearch = (input.bankName || "").trim().toLowerCase();
             const matchedProvider =
               (input.providerId && providers.find((p) => p.providerId === input.providerId)) ||
@@ -1318,15 +1483,27 @@ export function registerSendMoneyRoutes(app: Express): void {
               postcode: input.postcode,
               stateOrProvince: input.stateOrProvince,
               mobileNo: input.mobileNo,
+              addressLine2: input.addressLine2,
+              otherRelation: input.otherRelationship,
+              otherReason: input.otherReason,
+              narration: input.narration,
+              dob: input.dob,
+              gender: input.gender,
+              bankCode: input.bankCode,
+              clabe: input.clabe,
+              cnaps: input.cnaps,
+              isInternational: input.isInternational,
+              accountHolderName: input.accountHolderName,
             });
-            if (createdBen?.beneficiaryId) {
+            if (createdBen?.beneficiaryId && !createdBen.localOnly) {
               mitoBeneficiaryId = createdBen.beneficiaryId;
               mitoBeneficiaryCreated = Boolean(createdBen.createdNew);
             }
           }
 
           // 3. Resolve lookup codes (reasonCode & sourceOfFundCode) from GET /api/v1/mito/Lookups/types
-          const lookups = await getMitoLookupTypes("reason,source-of-funds,relationships");
+          const lookups: { reason?: Array<{ id?: string; code: string; name: string }> | null; sourceOfFunds?: Array<{ id?: string; code: string; name: string }> | null } =
+            await getMitoLookupTypes("reason,source-of-funds,relationships").catch(() => ({}));
           const requestedReason = (input.reasonId || input.reason || "").trim().toLowerCase();
           const matchedReason = requestedReason
             ? lookups.reason?.find(
@@ -1452,6 +1629,15 @@ export function registerSendMoneyRoutes(app: Express): void {
         ...(input.city ? { city: input.city } : {}),
         ...(input.postcode ? { postcode: input.postcode } : {}),
         ...(input.stateOrProvince ? { stateOrProvince: input.stateOrProvince } : {}),
+        ...(typeof input.isInternational === "boolean" ? { isInternational: input.isInternational } : {}),
+        ...(input.dob ? { dob: input.dob } : {}),
+        ...(input.gender ? { gender: input.gender } : {}),
+        ...(input.addressLine2 ? { addressLine2: input.addressLine2 } : {}),
+        ...(input.otherRelationship ? { otherRelationship: input.otherRelationship } : {}),
+        ...(input.bankCode ? { bankCode: input.bankCode } : {}),
+        ...(input.clabe ? { clabe: input.clabe } : {}),
+        ...(input.cnaps ? { cnaps: input.cnaps } : {}),
+        ...(input.accountHolderName ? { accountHolderName: input.accountHolderName } : {}),
         status: "awaiting_payment",
         createdAt: now,
         paidAt: null,
@@ -1659,7 +1845,7 @@ export function registerSendMoneyRoutes(app: Express): void {
         }
       }
 
-      let mitoBeneficiaryId = tx.mitoBeneficiaryId ?? null;
+      let mitoBeneficiaryId = tx.mitoBeneficiaryId && !isLocalMitoBeneficiaryId(tx.mitoBeneficiaryId) ? tx.mitoBeneficiaryId : null;
       let gatewayFailureMsg: string | null = null;
       if (!mitoBeneficiaryId && mitoUserId) {
         const userBens = await getMitoBeneficiaries({
@@ -1738,8 +1924,19 @@ export function registerSendMoneyRoutes(app: Express): void {
             mobileNo:
               tx.mobileNo ||
               (collectionMode === "MOBILEMONEY" ? tx.accountNumber || "08012345678" : undefined),
+            addressLine2: tx.addressLine2 ?? undefined,
+            otherRelation: tx.otherRelationship ?? undefined,
+            otherReason: tx.otherReason ?? undefined,
+            narration: tx.paymentNarration ?? undefined,
+            dob: tx.dob ?? undefined,
+            gender: tx.gender ?? undefined,
+            bankCode: tx.bankCode ?? undefined,
+            clabe: tx.clabe ?? undefined,
+            cnaps: tx.cnaps ?? undefined,
+            isInternational: typeof tx.isInternational === "boolean" ? tx.isInternational : undefined,
+            accountHolderName: tx.accountHolderName ?? undefined,
           });
-          if (createdBen?.beneficiaryId) {
+          if (createdBen?.beneficiaryId && !createdBen.localOnly) {
             mitoBeneficiaryId = createdBen.beneficiaryId;
           }
         } catch (benErr) {
@@ -1956,9 +2153,13 @@ export function registerSendMoneyRoutes(app: Express): void {
       }
     } catch (err) {
       console.warn("[sendMoneyRoutes] Transaction/SendMoney warning:", err);
+      const rawMsg = err instanceof Error && err.message ? err.message : "";
+      const friendlyMsg =
+        /Auth\/login|HTTP 5\d\d|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed|TimeoutError/i.test(rawMsg)
+          ? "The payment gateway is temporarily unavailable right now. Please try again in a moment, or choose Manual bank transfer."
+          : rawMsg || null;
       return {
-        _mitoGatewayMessage:
-          err instanceof Error && err.message ? err.message : null,
+        _mitoGatewayMessage: friendlyMsg,
       };
     }
     return {};

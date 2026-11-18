@@ -18,16 +18,12 @@ test.describe('Recipients page', () => {
         });
     });
 
-    test('Sidebar Senders & Recipients link opens the consolidated page and shows recipients under its tab', async ({ page }) => {
+    test('Sidebar Recipients link opens /senders-recipients?tab=recipients directly', async ({ page }) => {
         await page.goto('/');
 
         await page.getByTestId('link-recipients').click();
 
-        await expect(page).toHaveURL(/\/senders-recipients$/);
-        // Senders is the default tab; switching shows the recipients table
-        await expect(page.getByTestId('panel-senders')).toBeVisible();
-        await page.getByTestId('tab-recipients').click();
-        await expect(page).toHaveURL(/tab=recipients/);
+        await expect(page).toHaveURL(/\/senders-recipients\?tab=recipients/);
         await expect(page.getByTestId('table-recipients')).toBeVisible();
     });
 
@@ -100,39 +96,54 @@ test.describe('Recipients page', () => {
         await expect(page.getByText('Showing 1–12 of 12 recipients')).toBeVisible();
     });
 
-    test('Add Recipient flow creates a new row with a Nigeria narration rule', async ({ page }) => {
+    test('Add Recipient wizard creates a new recipient with Nigeria narration & bank verification', async ({ page }) => {
         await page.goto(RECIPIENTS_URL);
 
         await page.getByTestId('button-add-recipient').click();
-        await expect(page.getByTestId('input-new-first-name')).toBeVisible();
+        await expect(page).toHaveURL(/\/beneficiaries\/add/);
 
-        await page.getByTestId('input-new-first-name').fill('Test');
-        await page.getByTestId('input-new-last-name').fill('Recipient');
-        await page.getByTestId('input-new-recipient-email').fill('test.recipient@example.com');
+        // Stage 1: Nigeria + Bank deposit + Individual -> Continue
+        await expect(page.getByTestId('select-beneficiary-country')).toBeVisible();
+        await page.getByTestId('button-stage1-continue').click();
 
-        // Choosing Nigeria makes narration mandatory
-        await page.getByTestId('select-new-country').click();
-        await page.getByRole('option', { name: /Nigeria$/ }).click();
-        await expect(page.getByText('Narration is mandatory for Nigerian beneficiaries.')).toBeVisible();
+        // Stage 2A: Provider picker -> select first Nigerian bank
+        await expect(page.getByTestId('beneficiary-stage-2-provider')).toBeVisible({ timeout: 8000 });
+        await page.locator('[data-testid^="provider-option-"]').first().click();
 
-        // Service type is mandatory (choosing it resets the bank field, so pick it before the bank details)
-        await page.getByTestId('select-new-service-type').click();
-        await page.getByRole('option', { name: 'Bank Deposit', exact: true }).click();
+        // Stage 2B: Fill mandatory personal, relationship, reason, narration (NGN) & banking details
+        await expect(page.getByTestId('beneficiary-stage-2-details')).toBeVisible();
+        await page.getByTestId('input-beneficiary-first-name').fill('Test');
+        await page.getByTestId('input-beneficiary-last-name').fill('Recipient');
+        await page.getByTestId('select-beneficiary-relationship').click();
+        await page.getByRole('option', { name: 'Family', exact: true }).click();
+        await page.getByTestId('select-beneficiary-reason').click();
+        await page.getByRole('option', { name: /Family support/i }).click();
+        const mobileInput = page.getByTestId('input-beneficiary-mobile');
+        if (await mobileInput.isVisible()) {
+            await mobileInput.fill('8031234567');
+        }
+        await page.getByTestId('input-beneficiary-narration').fill('Test narration');
+        await page.getByTestId('input-beneficiary-account-number').fill('0987654321');
 
-        // Submit stays disabled until the mandatory narration is provided
-        await page.getByTestId('input-new-bank-name').fill('GTBank');
-        await page.getByTestId('input-new-account-number').fill('0987654321');
-        await expect(page.getByTestId('button-confirm-add-recipient')).toBeDisabled();
+        // Search bank details unlocks Continue
+        await page.getByTestId('button-search-bank-details').click();
+        await expect(
+            page.getByTestId('card-verified-bank-holder').or(page.getByTestId('card-unverified-bank-notice')),
+        ).toBeVisible({ timeout: 10000 });
 
-        await page.getByTestId('input-new-narration').fill('Test narration');
-        await expect(page.getByTestId('button-confirm-add-recipient')).toBeEnabled();
+        await page.getByRole('button', { name: 'Continue' }).click();
 
-        await page.getByTestId('button-confirm-add-recipient').click();
+        // Stage 3: Summary -> Save
+        await expect(page.getByTestId('beneficiary-review-summary')).toBeVisible({ timeout: 8000 });
+        await page.getByTestId('button-save-beneficiary').click();
 
-        // Newest recipient appears first (default sort: newest on top)
-        const firstRow = page.locator('[data-testid^="row-recipient-"]').first();
-        await expect(firstRow).toContainText('Test Recipient');
-        await expect(page.getByText('Beneficiary created successfully', { exact: true })).toBeVisible();
+        // Stage 4: Recipient added successfully -> Done returns to Recipients directory
+        await expect(page.getByText('Recipient added successfully')).toBeVisible({ timeout: 10000 });
+        await page.getByTestId('button-success-done').click();
+
+        await expect(page).toHaveURL(/\/senders-recipients\?tab=recipients/);
+        await page.getByTestId('input-search-recipients').fill('Test Recipient');
+        await expect(page.locator('[data-testid^="row-recipient-"]').first()).toContainText('Test Recipient');
     });
 
     test('Consolidates sender and recipient by email as a single record with dual-role badge', async ({ page }) => {
@@ -164,16 +175,17 @@ test.describe('Recipients page', () => {
         await expect(page.getByText('Recipient deleted', { exact: true })).toBeVisible();
     });
 
-    test('View Recipient modal shows full details and send action navigates', async ({ page }) => {
+    test('View Recipient opens /beneficiaries/:id 3-column detail page and Send money navigates', async ({ page }) => {
         await page.goto(RECIPIENTS_URL);
 
         await page.getByTestId('button-view-rec-002').click();
-        const modal = page.getByTestId('modal-view-recipient');
-        await expect(modal.getByText('Recipient Details')).toBeVisible();
-        await expect(modal.getByText('Barclays')).toBeVisible();
-        await expect(modal.getByText('20-45-67')).toBeVisible();
+        await expect(page).toHaveURL(/\/beneficiaries\/rec-002/);
+        await expect(page.getByTestId('card-personal-details')).toBeVisible();
+        await expect(page.getByTestId('card-banking-details')).toContainText('Barclays');
+        await expect(page.getByTestId('card-banking-details')).toContainText('20-45-67');
+        await expect(page.getByTestId('card-services-details')).toBeVisible();
 
-        await page.getByTestId('button-modal-send-money').click();
+        await page.getByTestId('button-detail-send-money').click();
         await expect(page).toHaveURL(/\/send-money/);
     });
 
