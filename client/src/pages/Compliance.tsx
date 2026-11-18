@@ -1,17 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ComplianceProfileData } from "@shared/compliance";
+import { ComplianceVerifiedView } from "@/components/compliance/ComplianceVerifiedView";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMitoKycJourney, type MitoKycJourneyClientResponse } from "@/lib/sendMoney";
 import {
-  CheckCircle2,
-  Clock,
+  COMPLIANCE_OVERVIEW_QUERY_KEY,
+  fetchComplianceOverview,
+} from "@/lib/compliance";
+import { fetchMitoKycJourney } from "@/lib/sendMoney";
+import { cn } from "@/lib/utils";
+import {
   AlertTriangle,
-  ShieldCheck,
-  ArrowRight,
-  RefreshCw,
   Loader2,
 } from "lucide-react";
 
@@ -72,13 +76,39 @@ function areAllJourneyModulesCompleted(
   });
 }
 
+const EMPTY_COMPLIANCE_PROFILE: ComplianceProfileData = {
+  uid: null,
+  isBusinessProfile: false,
+  fullName: "",
+  occupation: null,
+  dateOfBirth: null,
+  gender: null,
+  birthCountry: null,
+  address: null,
+  city: null,
+  postCode: null,
+  residentCountry: null,
+  nationality: null,
+  identificationType: null,
+  documentNo: null,
+  issuingCountry: null,
+  issueDate: null,
+  expiryDate: null,
+  imageUrl: null,
+  company: null,
+};
+
 export function CompliancePage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  const [journey, setJourney] = useState<MitoKycJourneyClientResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const returnUrl = useMemo(() => {
+    if (typeof window === "undefined") return "/kyc/return";
+    return `${window.location.origin}/kyc/return`;
+  }, []);
+
   const [iframeLoading, setIframeLoading] = useState<boolean>(false);
   const [completedStatus, setCompletedStatus] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -86,36 +116,61 @@ export function CompliancePage() {
     return normalizeKycStatus(sp.get("orderStatus") || sp.get("status"));
   });
 
-  const loadJourney = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const returnUrl = `${window.location.origin}/kyc/return`;
-      const res = await fetchMitoKycJourney({ returnUrl, journeyType: 1 });
-      setJourney(res);
-      if (res?.hostedUrl) {
-        setIframeLoading(true);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const { data: overview, isLoading: isOverviewLoading } = useQuery({
+    queryKey: [COMPLIANCE_OVERVIEW_QUERY_KEY, returnUrl],
+    queryFn: () => fetchComplianceOverview(returnUrl),
+    staleTime: 15_000,
+  });
 
-  useEffect(() => {
-    void loadJourney();
-  }, [loadJourney]);
+  const shouldFetchLocalJourney = Boolean(
+    overview?.source === "local" &&
+      overview?.journeyRecommended &&
+      !completedStatus,
+  );
+
+  const { data: localJourney, isLoading: isLocalJourneyLoading } = useQuery({
+    queryKey: ["/api/send-money/mito/kyc-journey", returnUrl],
+    queryFn: () => fetchMitoKycJourney({ returnUrl, journeyType: 1 }),
+    enabled: shouldFetchLocalJourney,
+    staleTime: 15_000,
+  });
 
   const hostedUrl = useMemo(() => {
-    return journey?.hostedUrl && typeof journey.hostedUrl === "string" && journey.hostedUrl.trim()
-      ? journey.hostedUrl.trim()
-      : null;
-  }, [journey]);
+    const raw =
+      overview?.source === "furp"
+        ? overview.hostedUrl
+        : localJourney?.hostedUrl ?? overview?.hostedUrl;
+    return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  }, [overview, localJourney]);
+
+  useEffect(() => {
+    if (hostedUrl) {
+      setIframeLoading(true);
+    }
+  }, [hostedUrl]);
 
   const journeyCode = useMemo(() => {
-    return journey?.journeyCode || extractJourneyCodeFromUrl(hostedUrl);
-  }, [journey, hostedUrl]);
+    const rawCode =
+      overview?.source === "furp"
+        ? overview.journeyCode
+        : localJourney?.journeyCode ?? overview?.journeyCode;
+    return rawCode || extractJourneyCodeFromUrl(hostedUrl);
+  }, [overview, localJourney, hostedUrl]);
 
-  const kycFlow = journey?.kycFlow || null;
-  const kycStatus = normalizeKycStatus(journey?.kycStatus) || journey?.kycStatus || null;
+  const kycFlow =
+    (overview?.source === "furp"
+      ? overview.kycFlow
+      : localJourney?.kycFlow ?? overview?.kycFlow) || null;
+
+  const kycStatus =
+    normalizeKycStatus(overview?.kyc?.status) ||
+    normalizeKycStatus(localJourney?.kycStatus) ||
+    overview?.kyc?.status ||
+    localJourney?.kycStatus ||
+    null;
+
+  const effectiveKycType =
+    overview?.kyc?.type || localJourney?.kycType || "AMLADDR";
 
   // Safety timeout so spinner over iframe never stays stuck
   useEffect(() => {
@@ -126,7 +181,7 @@ export function CompliancePage() {
 
   const handleBlocked = useCallback(() => {
     toast({
-      title: "Account Blocked",
+      title: "Account blocked",
       description:
         "Your KYC has been blocked! Please contact the administrator for further assistance with your KYC verification.",
       variant: "destructive",
@@ -134,27 +189,45 @@ export function CompliancePage() {
     setLocation("/login");
   }, [toast, setLocation]);
 
+  const markCompletedAndRefresh = useCallback(
+    (nextStatus: string) => {
+      setCompletedStatus(nextStatus);
+      void queryClient.invalidateQueries({
+        queryKey: [COMPLIANCE_OVERVIEW_QUERY_KEY],
+      });
+    },
+    [queryClient],
+  );
+
   // Listen for postMessage from hosted KYC iframe or /kyc/return
   useEffect(() => {
     if (!hostedUrl || completedStatus) return;
     const onMessage = (event: MessageEvent) => {
       try {
-        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        const data =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
         if (!data || typeof data !== "object") return;
 
         if (data.type === "MITO_LINK_SUCCESS") {
-          const st = normalizeKycStatus(data.payload?.status || data.metadata?.status || "SUCCESSFUL") || "SUCCESSFUL";
-          setCompletedStatus(st);
+          const st =
+            normalizeKycStatus(
+              data.payload?.status || data.metadata?.status || "SUCCESSFUL",
+            ) || "SUCCESSFUL";
+          markCompletedAndRefresh(st);
           return;
         }
 
         const candidate = normalizeKycStatus(data.orderStatus || data.status);
-        if ((data.type === "KYC_COMPLETE" || candidate) && candidate && candidate !== "Pending") {
+        if (
+          (data.type === "KYC_COMPLETE" || candidate) &&
+          candidate &&
+          candidate !== "Pending"
+        ) {
           if (candidate === "IDBLOCKED") {
             handleBlocked();
             return;
           }
-          setCompletedStatus(candidate);
+          markCompletedAndRefresh(candidate);
         }
       } catch {
         // ignore non-JSON messages
@@ -162,10 +235,9 @@ export function CompliancePage() {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [hostedUrl, completedStatus, handleBlocked]);
+  }, [hostedUrl, completedStatus, handleBlocked, markCompletedAndRefresh]);
 
   // Poll GET /api/send-money/mito/journey-status?journeyCode=... every 2.5s while iframe is open
-  // so completion is detected immediately even before external returnUrl redirect finishes
   useEffect(() => {
     if (!journeyCode || completedStatus) return;
     let active = true;
@@ -180,7 +252,10 @@ export function CompliancePage() {
           data?: {
             journeyStatus?: string;
             orderStatus?: string | null;
-            modules?: Array<{ moduleStatus?: string | null; subModules?: any[] | null }> | null;
+            modules?: Array<{
+              moduleStatus?: string | null;
+              subModules?: any[] | null;
+            }> | null;
           } | null;
         };
         const st = json.data;
@@ -209,7 +284,7 @@ export function CompliancePage() {
             handleBlocked();
             return;
           }
-          setCompletedStatus(resolved);
+          markCompletedAndRefresh(resolved);
         }
       } catch {
         // ignore transient poll errors
@@ -220,177 +295,137 @@ export function CompliancePage() {
       active = false;
       clearInterval(timer);
     };
-  }, [journeyCode, completedStatus, handleBlocked]);
+  }, [journeyCode, completedStatus, handleBlocked, markCompletedAndRefresh]);
 
   const effectiveStatus = completedStatus || kycStatus;
   const isVerified =
     completedStatus === "SUCCESSFUL" ||
     completedStatus === "IDPASSED" ||
-    (kycFlow === "Flow_No_Action_Required" && effectiveStatus === "SUCCESSFUL");
+    effectiveStatus === "SUCCESSFUL" ||
+    effectiveStatus === "IDPASSED";
   const isUnderReview =
-    completedStatus === "UNDERREVIEW" ||
-    (kycFlow === "Flow_No_Action_Required" && effectiveStatus === "UNDERREVIEW");
+    completedStatus === "UNDERREVIEW" || effectiveStatus === "UNDERREVIEW";
   const isFailedOrContactAdmin =
     completedStatus === "FAILED" ||
     completedStatus === "UNRESOLVED" ||
+    effectiveStatus === "FAILED" ||
+    effectiveStatus === "UNRESOLVED" ||
     kycFlow === "Flow_Contact_Admin";
+
+  const isLoading =
+    isOverviewLoading || (shouldFetchLocalJourney && isLocalJourneyLoading);
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto py-4 space-y-6" data-testid="compliance-page">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Compliance</h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Identity, Address &amp; AML verification required for regulated money transfers
-            </p>
-          </div>
-          {!isLoading && !hostedUrl && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setCompletedStatus(null);
-                void loadJourney();
-              }}
-              data-testid="button-refresh-compliance"
-            >
-              <RefreshCw className="w-4 h-4 mr-1.5" />
-              Refresh Status
-            </Button>
-          )}
-        </div>
+      <div className="w-full pb-12" data-testid="compliance-page">
+        <h1 className="font-display mb-8 text-2xl font-light tracking-tight text-[#323130] md:text-[30px]">
+          Compliance
+        </h1>
 
         {isLoading ? (
-          <Card className="border-slate-200 shadow-xs">
-            <CardContent className="flex flex-col items-center justify-center py-20 gap-3">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-              <p className="text-sm text-slate-600">Checking your compliance &amp; KYC status...</p>
-            </CardContent>
-          </Card>
+          <div
+            data-testid="compliance-loading-skeleton"
+            className="w-full space-y-6 lg:pr-12"
+          >
+            <Skeleton className="h-6 w-56" />
+            <div className="h-px w-full bg-[#e1dfdd]" />
+            <Skeleton className="h-6 w-48" />
+            <div className="space-y-4 pt-1">
+              {[0, 1, 2, 3, 4, 5, 6].map((idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-6"
+                >
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-4 w-44" />
+                </div>
+              ))}
+            </div>
+          </div>
         ) : isVerified ? (
-          <Card className="border-emerald-200 bg-white shadow-xs" data-testid="compliance-verified-card">
-            <CardContent className="p-8 flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Verified ({journey?.kycType || "AMLADDR"})
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">Verification complete</h2>
-              <p className="text-sm text-slate-600 max-w-md">
-                Your personal details and address verification have been approved. No further compliance action is required — you can now send money securely.
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-                <Button
-                  onClick={() => setLocation("/send-money")}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                  data-testid="button-compliance-send-money"
-                >
-                  Send Money
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
-                </Button>
-                <Button variant="outline" onClick={() => setLocation("/")} data-testid="button-compliance-overview">
-                  Back to Overview
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <ComplianceVerifiedView
+            profile={overview?.profile ?? EMPTY_COMPLIANCE_PROFILE}
+            kycType={effectiveKycType}
+          />
         ) : isUnderReview ? (
-          <Card className="border-amber-200 bg-white shadow-xs" data-testid="compliance-under-review-card">
-            <CardContent className="p-8 flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
-                <Clock className="w-10 h-10" />
-              </div>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                Under Review
-              </span>
-              <h2 className="text-xl font-bold text-slate-900">Your KYC is under review</h2>
-              <p className="text-sm text-slate-600 max-w-md">
-                Your KYC is under review, but you can still proceed with your transaction. The transaction will then be verified by the admin for further processing.
-              </p>
-              <div className="pt-3">
-                <Button
-                  onClick={() => setLocation("/")}
-                  className="bg-blue-600 hover:bg-blue-700 text-white min-w-[180px]"
-                  data-testid="button-compliance-continue"
-                >
-                  Continue
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div
+            data-testid="compliance-under-review-card"
+            className="mx-auto flex max-w-[600px] flex-col items-center py-6 text-center"
+          >
+            <AlertTriangle className="mx-auto my-8 h-[72px] w-[72px] text-[#DBA800]" />
+            <p className="text-[15px] leading-relaxed text-[#323130]">
+              Your KYC is under review, but you can still proceed with the
+              transaction. The transaction will then be verified by the admin
+              for further processing.
+            </p>
+            <Button
+              type="button"
+              onClick={() => setLocation("/")}
+              data-testid="button-compliance-continue"
+              className="mt-8 h-11 w-full max-w-[600px] cursor-pointer bg-[#2e5bff] text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Continue
+            </Button>
+          </div>
         ) : isFailedOrContactAdmin ? (
-          <Card className="border-red-200 bg-white shadow-xs" data-testid="compliance-failed-card">
-            <CardContent className="p-8 flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-600">
-                <AlertTriangle className="w-10 h-10" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">Verification requires assistance</h2>
-              <p className="text-sm text-slate-600 max-w-md">
-                {completedStatus === "FAILED"
-                  ? "KYC verification failed! Please contact the administrator for further assistance with your KYC verification."
-                  : "Please contact the administrator for further assistance with your KYC verification."}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-                <Button
-                  onClick={() => {
-                    setCompletedStatus(null);
-                    void loadJourney();
-                  }}
-                  variant="outline"
-                >
-                  Try Again
-                </Button>
-                <Button onClick={() => setLocation("/")} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Done
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div
+            data-testid="compliance-failed-card"
+            className="mx-auto flex max-w-[600px] flex-col items-center py-6 text-center"
+          >
+            <AlertTriangle className="mx-auto my-8 h-[72px] w-[72px] text-destructive" />
+            <p className="text-[15px] leading-relaxed text-[#323130]">
+              {effectiveStatus === "FAILED"
+                ? "KYC verification failed. Please contact the administrator for further assistance with your KYC verification."
+                : "Please contact the administrator for further assistance with your KYC verification."}
+            </p>
+            <Button
+              type="button"
+              onClick={() => setLocation("/")}
+              data-testid="button-compliance-done"
+              className="mt-8 h-11 w-full max-w-[600px] cursor-pointer bg-[#2e5bff] text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Done
+            </Button>
+          </div>
         ) : hostedUrl ? (
           <div
-            className="relative w-full rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs"
-            style={{ height: "calc(100dvh - 180px)", minHeight: "560px" }}
+            className="relative h-[calc(100dvh-180px)] min-h-[560px] w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs"
             data-testid="compliance-iframe-container"
           >
             {iframeLoading && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                <p className="text-sm text-slate-600">Loading secure KYC verification...</p>
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/90">
+                <Loader2 className="h-8 w-8 animate-spin text-[#2e5bff]" />
+                <p className="text-sm text-[#605e5c]">
+                  Loading secure KYC verification...
+                </p>
               </div>
             )}
             <iframe
               ref={iframeRef}
               src={hostedUrl}
-              title="KYC Address Verification"
-              className="w-full h-full border-0"
+              title="KYC address verification"
+              className={cn(
+                "h-full w-full border-0 transition-opacity duration-300",
+                iframeLoading ? "opacity-0" : "opacity-100",
+              )}
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-popups-to-escape-sandbox allow-modals"
               allow="camera; microphone; geolocation; fullscreen; clipboard-write"
               onLoad={() => setIframeLoading(false)}
-              style={{
-                opacity: iframeLoading ? 0 : 1,
-                transition: "opacity 0.3s ease-in-out",
-              }}
               data-testid="compliance-kyc-iframe"
             />
           </div>
+        ) : overview?.profile ? (
+          <ComplianceVerifiedView
+            profile={overview.profile}
+            kycType={effectiveKycType}
+          />
         ) : (
-          <Card className="border-slate-200 bg-white shadow-xs">
-            <CardContent className="p-8 flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">Compliance up to date</h2>
-              <p className="text-sm text-slate-600 max-w-md">
-                {journey?.message || "No additional KYC verification is currently required for your account."}
-              </p>
-              <Button onClick={() => setLocation("/send-money")} className="bg-blue-600 hover:bg-blue-700 text-white">
-                Send Money
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="py-6">
+            <p className="text-[15px] text-[#605e5c]">
+              {localJourney?.message ||
+                "No additional KYC verification is currently required for your account."}
+            </p>
+          </div>
         )}
       </div>
     </DashboardLayout>

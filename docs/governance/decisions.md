@@ -231,3 +231,61 @@
      - Preserved `<SendMoneyReceiptDialog>` non-regressively (`Option 1`): paid Send Money desktop rows display the centered `w-[88px]` `Resend` pill (`#2e5bff`) + floating `MoreVertical` (`⋮`, `button-actions-more-${tx.id}`) containing `View receipt` (`button-receipt-${tx.id}`), matching the `[View] + ⋮` pattern on `Receive money` and `Invoices`; mobile cards retain paired `[Receipt]` + `[Resend]` pills.
      - Aligned empty state (`Reset filters`), loading `<Skeleton>` rows/cards, `enabled: !isAuthLoading` query gating, `scheduledTransactions` UTC date sort, `transactions-pagination` footer (`Showing X–Y of Z transactions • Page P of T` + `button-prev-page` / `button-next-page`), and regulatory footer note with `Dashboard.tsx`.
   3. **Superseded Behaviour:** Earlier `/transactions` column order (`Ref no. → Recipient / sender → Service → Date → Amount`), desktop email/type-badge sublines, ISO-code `Amount` + `subNote`, `MoreHorizontal` overflow icon, Title-Case filter chips, and side-by-side desktop `[Receipt] [Resend]` buttons superseded by the unified Overview table layout.
+
+---
+
+### `DEC-2026-11-18-SUPPORT-MODULE` — 5-Screen Support Module (`/support`, `/support/faq`, `/support/my-tickets`, `/support/create-ticket`, `/my-tickets/request-details/:id`) & Sidebar Unread Support Badge (`Direction A`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `Direction A` + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Backend: `shared/support.ts`, `shared/schema.ts`, `server/supportService.ts`, `server/supportRoutes.ts`, `server/notificationService.ts`, `server/routes.ts`
+  - Frontend: `client/src/App.tsx`, `client/src/components/layout/Sidebar.tsx`, `client/src/contexts/NotificationContext.tsx`, `client/src/components/notifications/NotificationItem.tsx`, `client/src/pages/NotificationDetail.tsx`, `client/src/pages/Auth/{SignInSignUp,Login}.tsx`, `client/src/pages/Auth/components/{SignInStep,OtpStep}.tsx`, `client/src/lib/support.ts`, `client/src/components/support/{SupportAttachmentUpload,SupportSignInRequiredCard}.tsx`, `client/src/pages/Support/{SupportHub,SupportFaq,MyTickets,CreateTicket,TicketRequestDetails}.tsx`
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/support.spec.js`
+- **Summary:**
+  1. **5-Screen Layout & Flows (`Direction A` — Staging Fidelity + `PD-04` Sentence Case):**
+     - **`/support` (`SupportHub.tsx`):** Full-width `DashboardLayout` hub with `Support` heading and stacked `FAQs` (`/support/faq`) and `My tickets` (`/support/my-tickets`) navigation cards (`#F9F9FA` surface, hover light-blue, right chevron).
+     - **`/support/faq` (`SupportFaq.tsx`):** `<` Back button + `FAQs` heading + retail-scoped categorized single-toggle `+`/`−` accordions (`GET /api/v1/Account/Faqs`, rewriting internal `FURP` mentions to `mito.money`).
+     - **`/support/my-tickets` (`MyTickets.tsx`):** `<` Back button, `My tickets` heading, `+ Create new ticket` primary CTA (`/support/create-ticket`), right-aligned debounced `Search tickets…` input with `×` clear button, 5 status pill tabs (`New`, `Awaiting admin`, `Awaiting client`, `Resolved`, `All` — smart-defaulting to `New` when `New > 0` else `All`), desktop table + mobile card stack (`Ticket #`, `Subject`, `Date`, `Status` badges: `New` `#1A73E8`, `Awaiting admin` `#F9AB00`, `Awaiting client` `#7B61FF`, `Resolved` `#1E8E3E`), empty state, and pagination.
+     - **`/support/create-ticket` (`CreateTicket.tsx` + `/support/TicketForm` alias):** `<` Back button, `New ticket` heading, `Need help regarding` subheading, and 3 expandable issue accordions (`Failed transaction`, `Recipients`, `KYC and compliance`), each rendering an inline form with mandatory fields on top (`Transaction reference*` for Failed transaction, `Subject*`, `Message*`) above optional single-file `Attachment` dropzone (`PNG, JPG, PDF — max 2MB`) and `Submit request` button + toast feedback.
+     - **`/my-tickets/request-details/:id` (`TicketRequestDetails.tsx`):** `<` Back button, `#<referenceNumber> <summary>`, date, status, `"Reply to this ticket to open it"` helper when resolved/closed, collapsible `Reply` composer (`Description*`, `Attachment`, `Cancel request` / `Submit request`), and conversation thread cards (`BackOffice User` on `#F8F8F8`, customer derived dynamically from active user per `REF-18`, image lightbox modal, PDF preview, and download).
+  2. **Sidebar & Notification Integration (`Sidebar.tsx`, `notificationService.ts`):**
+     - Retains `LifeBuoy` icon on `Support` (`DEC-2026-11-17-DASHBOARD-SUMMARY-AND-SIDEBAR-THEME`), highlights `Support` across both `/support*` and `/my-tickets*`, and renders `sidebar-support-badge` (blue filled bell + red count pill) when unread `support_ticket_*` notifications exist, automatically marking matching ticket notifications read when `/my-tickets/request-details/:id` is viewed.
+  3. **Protected Existing Modules (`AGENTS.md` §1, §6):** `Settings.tsx` (`Request profile change`) and `SampleTicket.tsx` (`/sample-ticket`) remain untouched.
+
+---
+
+### `DEC-2026-11-18-MITOVIEW-AND-REAL-FURP-APIS` — MitoView Module (`/mitoview`, `/mitoview/:slug`, `/mitoview/unsubscribe`, `/blog`) & Live `furp02-staging` Real-API Integration for Support & MitoView (`Direction A` + Customer Auth Bridge)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `MitoView Direction A + Real FURP Customer Auth Bridge` + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Assets: `shared/mitoView.ts`, `shared/support.ts`, `client/public/mitoview/july/{unified-payments,onepipe,support,rhemi}.jpg`
+  - Backend: `server/furpClient.ts`, `server/auth.ts` (additive FURP `Auth/check-email` & `Auth/login` customer token bridge), `server/supportRoutes.ts` (live `furp02-staging` proxy + `FURP_LIVE=0`/`FURP_BASE_URL=''`/`VITEST` offline fallback), `server/mitoViewRoutes.ts` (live `furp02-staging` `MitoView/*` proxy + offline fallback), `server/routes.ts`
+  - Frontend: `client/src/lib/mitoView.ts`, `client/src/lib/support.ts`, `client/src/pages/MitoView/{MitoViewShell,MitoViewHome,MitoViewArticle,MitoViewUnsubscribe}.tsx`, `client/src/pages/Support/{MyTickets,CreateTicket,TicketRequestDetails}.tsx`, `client/src/components/layout/Sidebar.tsx`, `client/src/App.tsx`
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/mitoview.spec.js`
+- **Summary:**
+  1. **Live `furp02-staging.funtechcom.com` Real-API Integration (Superseding Local-Only Prototype Store in `DEC-2026-11-18-SUPPORT-MODULE`):**
+     - **MitoView (`server/mitoViewRoutes.ts`):** Proxies `GET /api/v1/MitoView/posts`, `GET /api/v1/MitoView/posts/:slug`, `POST /api/v1/MitoView/subscribe`, `POST /api/v1/MitoView/unsubscribe`, and `POST /api/v1/MitoView/unsubscribe/confirm` directly to `furp02-staging.funtechcom.com` keeping `apiKey` strictly server-side (5-minute GET cache; local fixture fallback only when `VITEST` or `FURP_LIVE=0`).
+     - **Support & FURP Customer Auth Bridge (`server/auth.ts`, `server/furpClient.ts`, `server/supportRoutes.ts`):** `POST /api/auth/check-email` and `POST /api/auth/login` bridge real `furp02-staging` customer accounts (`/api/v1/Auth/check-email` & `/api/v1/Auth/login`), syncing the customer into local `authUsers` and storing their FURP customer JWT (`furpAccessToken`, cleared on logout) while leaving local/Playwright test accounts unbroken. `GET /api/v1/Account/Faqs` fetches live FAQs from `furp02-staging` (via customer JWT or `getMitoRetailToken()`), and `Support/*` + `Account/GetNotifications?unreadOnly=true` + `Account/MarkNotificationRead` proxy per-customer tickets directly to `furp02-staging` using the signed-in customer's FURP JWT (showing a clean `Sign in` prompt when no customer FURP JWT is active, never leaking a shared partner account's tickets).
+  2. **MitoView 3-Screen UX (`Direction A` — Tailwind CSS Only, `PD-04` Sentence Case):**
+     - **`/mitoview` (`MitoViewHome.tsx`):** Adaptive signed-in (`DashboardLayout`, omitting Staging's duplicate marketing `HomeFooter` while keeping `Sidebar` `MitoView` active) and signed-out public shell; pill search bar (`?q=...`), `16:10` media cards, pagination, and `Are you subscribed?` card (`Subscribe` + `Unsubscribe any time` + `useToast()` feedback).
+     - **`/mitoview/:slug` (`MitoViewArticle.tsx` + `/blog` redirects):** Back navigation to `/mitoview`, Georgia serif editorial reader supporting `river`, `split`, and `editorial` layouts, `sm`/`md`/`lg`/`banner` figures, `bodyJson` block stream (`kicker`, `h2`, `p`, `img`, `cta`), and edition-not-found state.
+     - **`/mitoview/unsubscribe` (`MitoViewUnsubscribe.tsx`):** `← All posts` link, `Leave the MitoView list`, visible bordered pill email input (fixing Staging's white-on-white input defect), and `?token=...` confirmation mode.
+
+---
+
+### `DEC-2026-11-18-COMPLIANCE-REFERENCE-LAYOUT` — Full-Width Reference `/compliance` Page & Live `furp02-staging` Profile/KYC Hydration (`Direction A` — `PD-04` Sentence Case)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `Direction A` from uploaded `/compliance` reference screenshot + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000/compliance`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Backend: `shared/compliance.ts`, `server/complianceRoutes.ts`, `server/routes.ts`
+  - Frontend: `client/src/lib/compliance.ts`, `client/src/components/compliance/ComplianceVerifiedView.tsx`, `client/src/pages/Compliance.tsx` (`CompliancePage` only; `KycVerificationPage` & `KycReturnPage` untouched)
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/compliance.spec.js`
+- **Summary:**
+  1. **Reference `/compliance` Layout (`Direction A` + `PD-04` Sentence Case, Tailwind CSS Only):**
+     - Replaced the legacy centered `max-w-4xl` emerald `<Card>` (`compliance-verified-card`) and its `Refresh Status` / `Send Money` / `Back to Overview` buttons in `CompliancePage` with the full-width `DashboardLayout` compliance sheet (`Compliance` heading -> `AML address verification` -> `1px` `#e1dfdd` rule -> `Personal information` two-column rows: `Full name`, `Occupation`, `Date of birth`, `Gender`, `Address`, `City`, `Post code` in clean uppercase, `Resident country`; plus `Business verification`, Full Document KYC `Identity verification` + `Photo verification` + right-side bordered `Already verified` card, `Under review`, `Failed`, and pure-Tailwind `hostedUrl` KYC `<iframe>`).
+  2. **Live `furp02-staging` Hydration & Non-Regression:**
+     - `GET /api/compliance/overview` (`server/complianceRoutes.ts`) fetches live `GET /api/v1/Account/profile` and `GET /api/v1/KYC/Status?api-version=2` from `furp02-staging.funtechcom.com` when a customer `furpAccessToken` is active (launching customer FURP `POST /api/v1/Journey` only when KYC action is required), and falls back cleanly to the signed-in / demo user's server-stored `authUsers` profile + Mito KYC Journey when local (zero hardcoded names per `REF-18`; `/kyc` & `/kyc/return` untouched).
+  3. **Superseded Behaviour:** Legacy centered `compliance-verified-card` and `Refresh Status` / `Send Money` / `Back to Overview` buttons on `/compliance` superseded by `Direction A` reference layout (`2026-11-18`).

@@ -235,6 +235,9 @@ export const NOTIFICATION_TYPES = [
   "bonus_expired",
   "bonus_reversed",
   "bonus_unblocked",
+  // Support ticket events
+  "support_ticket_reply",
+  "support_ticket_resolved",
 ] as const;
 
 export type NotificationEventType = (typeof NOTIFICATION_TYPES)[number];

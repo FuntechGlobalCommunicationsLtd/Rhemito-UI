@@ -1,4 +1,5 @@
 import { clearReferral, formatMoney, loadReferral } from "@/lib/rewards";
+import { getSafePostAuthRedirect } from "@/lib/support";
 import React, { useState, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -88,7 +89,7 @@ export default function OtpStep({ email, onChangeEmail, devOtp, onVerifiedForReg
         if (pendingStoreRedirect) {
           window.location.href = pendingStoreRedirect;
         } else {
-          setLocation("/");
+          setLocation(getSafePostAuthRedirect());
         }
       }, 2000);
     },

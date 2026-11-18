@@ -62,7 +62,12 @@ export type NotificationType =
   | "bonus_expiring"
   | "bonus_expired"
   | "bonus_reversed"
-  | "bonus_unblocked";
+  | "bonus_unblocked"
+  // Support tickets
+  | "support_ticket_reply"
+  | "support_ticket_resolved";
+
+export type NotificationEventType = NotificationType;
 
 export interface Notification {
   id: string;
@@ -72,6 +77,8 @@ export interface Notification {
   isRead: boolean;
   createdAt: string;
   data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  txnId?: string;
 }
 
 export interface NotificationsResponse {
@@ -163,6 +170,7 @@ export function NotificationContextProvider({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/notifications"] });
       qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      qc.invalidateQueries({ queryKey: ["/api/support/unread-count"] });
     },
   });
 
@@ -173,6 +181,7 @@ export function NotificationContextProvider({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/notifications"] });
       qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      qc.invalidateQueries({ queryKey: ["/api/support/unread-count"] });
     },
   });
 
@@ -183,6 +192,7 @@ export function NotificationContextProvider({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/notifications"] });
       qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      qc.invalidateQueries({ queryKey: ["/api/support/unread-count"] });
     },
   });
 

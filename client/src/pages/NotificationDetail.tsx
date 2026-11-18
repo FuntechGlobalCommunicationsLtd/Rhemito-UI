@@ -19,6 +19,7 @@ import {
   Gift,
   Sparkles,
   Users,
+  LifeBuoy,
 } from "lucide-react";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,18 @@ const TYPE_CONFIG: Record<NotificationType, TypeConfig> = {
   bonus_expired: { icon: Clock, containerClass: "bg-slate-100", iconClass: "text-slate-600", label: "Bonus Expired" },
   bonus_reversed: { icon: XCircle, containerClass: "bg-destructive/10", iconClass: "text-destructive", label: "Bonus Removed" },
   bonus_unblocked: { icon: Gift, containerClass: "bg-teal/10", iconClass: "text-teal", label: "Bonus Available" },
+  support_ticket_reply: {
+    icon: LifeBuoy,
+    containerClass: "bg-blue-500/10",
+    iconClass: "text-[#2e5bff]",
+    label: "Support ticket reply",
+  },
+  support_ticket_resolved: {
+    icon: LifeBuoy,
+    containerClass: "bg-emerald-500/10",
+    iconClass: "text-emerald-600",
+    label: "Support ticket resolved",
+  },
 };
 
 // ─── Format timestamp — full (not relative) ──────────────────────────────────
@@ -128,6 +141,7 @@ export default function NotificationDetail(): React.JSX.Element {
       .then(() => {
         void qc.invalidateQueries({ queryKey: ["/api/notifications"] });
         void qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+        void qc.invalidateQueries({ queryKey: ["/api/support/unread-count"] });
         void qc.invalidateQueries({ queryKey: [`/api/notifications/${notification.id}`] });
       })
       .catch(() => { /* swallow — UI doesn't need to block on read receipt */ });
@@ -156,6 +170,7 @@ export default function NotificationDetail(): React.JSX.Element {
     } finally {
       void qc.invalidateQueries({ queryKey: ["/api/notifications"] });
       void qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      void qc.invalidateQueries({ queryKey: ["/api/support/unread-count"] });
       // Drop the deleted detail from the cache so a later back-nav doesn't
       // briefly re-render the stale (now-deleted) notification.
       void qc.removeQueries({ queryKey: [`/api/notifications/${deletedId}`] });
@@ -274,6 +289,31 @@ export default function NotificationDetail(): React.JSX.Element {
                     data-testid="button-view-campaigns"
                   >
                     View Campaigns
+                  </Button>
+                )}
+                {(notification.type === "support_ticket_reply" ||
+                  notification.type === "support_ticket_resolved") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const meta = (notification.metadata ?? notification.data) as
+                        | Record<string, unknown>
+                        | undefined;
+                      const ref = String(
+                        meta?.referenceNumber || meta?.ticketNo || notification.txnId || ""
+                      )
+                        .replace(/^#/, "")
+                        .trim();
+                      navigate(
+                        ref
+                          ? `/my-tickets/request-details/${encodeURIComponent(ref)}`
+                          : "/support/my-tickets"
+                      );
+                    }}
+                    data-testid="button-view-support-ticket"
+                  >
+                    View ticket
                   </Button>
                 )}
               </div>

@@ -38,6 +38,14 @@ import NotificationArchive from "@/pages/NotificationArchive";
 import NotificationDetail from "@/pages/NotificationDetail";
 import BankTransferDesigns from "@/pages/BankTransferDesigns";
 import CompliancePage, { KycVerificationPage, KycReturnPage } from "@/pages/Compliance";
+import SupportHub from "@/pages/Support/SupportHub";
+import SupportFaq from "@/pages/Support/SupportFaq";
+import MyTickets from "@/pages/Support/MyTickets";
+import CreateTicket from "@/pages/Support/CreateTicket";
+import TicketRequestDetails from "@/pages/Support/TicketRequestDetails";
+import MitoViewHome from "@/pages/MitoView/MitoViewHome";
+import MitoViewArticle from "@/pages/MitoView/MitoViewArticle";
+import MitoViewUnsubscribe from "@/pages/MitoView/MitoViewUnsubscribe";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -118,6 +126,21 @@ function Router() {
       <Route path="/kyc/return" component={KycReturnPage} />
       <Route path="/kyc/status" component={KycReturnPage} />
       <Route path="/kyc" component={KycVerificationPage} />
+      <Route path="/support" component={SupportHub} />
+      <Route path="/support/faq" component={SupportFaq} />
+      <Route path="/support/my-tickets" component={MyTickets} />
+      <Route path="/support/create-ticket" component={CreateTicket} />
+      <Route path="/support/TicketForm" component={CreateTicket} />
+      <Route path="/my-tickets/request-details/:id" component={TicketRequestDetails} />
+      <Route path="/mitoview/unsubscribe" component={MitoViewUnsubscribe} />
+      <Route path="/mitoview/:slug" component={MitoViewArticle} />
+      <Route path="/mitoview" component={MitoViewHome} />
+      <Route path="/blog/:slug">
+        {(params) => <Redirect to={`/mitoview/${params.slug}`} />}
+      </Route>
+      <Route path="/blog">
+        <Redirect to="/mitoview" />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

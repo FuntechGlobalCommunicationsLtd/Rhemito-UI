@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Loader2, ArrowLeft } from "lucide-react";
+import { getSafePostAuthRedirect } from "@/lib/support";
 import PasswordInput from "./PasswordInput";
 
 interface SignInStepProps {
@@ -31,7 +32,7 @@ export default function SignInStep({ email, onBack, onForgotPassword }: SignInSt
         title: "Welcome back!",
         description: `Signed in as ${data.user.firstName || data.user.email}`,
       });
-      setLocation("/");
+      setLocation(getSafePostAuthRedirect());
     },
     onError: (error: Error) => {
       toast({

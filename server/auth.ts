@@ -19,6 +19,13 @@ import { onCustomerVerified, type ReferralAttributionMeta } from "./rewardsServi
 import { syncCustomer as syncPromoCustomer } from "./promo";
 import { rememberDevice } from "./deviceId";
 import { registerOrSyncMitoRetailUser } from "./mitoRetail";
+import {
+  clearCustomerFurpToken,
+  furpCheckCustomerEmail,
+  furpLoginCustomer,
+  isRealFurpLiveEnabled,
+  setCustomerFurpToken,
+} from "./furpClient";
 
 function isPlaceholderUser(
   user: { id: string; email: string; firstName: string | null; lastName: string | null } | undefined,
@@ -65,6 +72,89 @@ function generateOtp(): string {
   return "123456";
 }
 
+const FURP_COUNTRY_ISO3_TO_ISO2: Record<string, string> = {
+  GBR: "GB",
+  NGA: "NG",
+  USA: "US",
+  CAN: "CA",
+  GHA: "GH",
+  KEN: "KE",
+  ZAF: "ZA",
+  DEU: "DE",
+  FRA: "FR",
+  IND: "IN",
+  ARE: "AE",
+};
+
+/**
+ * Additive FURP customer bridge (DEC-2026-11-18-MITOVIEW-AND-REAL-FURP-APIS).
+ *
+ * When live FURP is enabled and the email belongs to a real `furp02-staging` customer, the customer's own
+ * password is verified against FURP, the customer is synced into local `authUsers`, and their FURP JWT is
+ * stored server-side (for Support). Returns null whenever the bridge does not apply or FURP rejects the
+ * credentials, so the existing local login flow runs unchanged. The password is only sent to FURP after
+ * `Auth/check-email` confirms the account exists there.
+ */
+async function tryFurpCustomerLogin(
+  req: Request,
+  email: string,
+  password: string,
+): Promise<{ status: number; body: Record<string, unknown> } | null> {
+  if (!isRealFurpLiveEnabled() || email.toLowerCase().endsWith("@example.com")) return null;
+
+  const { existsOnFurp } = await furpCheckCustomerEmail(email);
+  if (!existsOnFurp) return null;
+
+  const furp = await furpLoginCustomer(email, password);
+  if (!furp?.token) return null;
+
+  let user = await storage.getAuthUserByEmail(email);
+  if (user?.status === "blocked") {
+    return {
+      status: 403,
+      body: { message: "Your account has been blocked. Please contact support at admin@rhemito.com" },
+    };
+  }
+  // An unverified local registration is never adopted by the bridge — keep the existing flow.
+  if (user && user.status === "pending" && !isPlaceholderUser(user)) return null;
+
+  if (!user || isPlaceholderUser(user)) {
+    const profile = (furp.profile ?? {}) as Record<string, any>;
+    const nameParts = String(furp.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const firstName = String(profile.firstName ?? nameParts[0] ?? "") || null;
+    const lastName = String(profile.lastName ?? nameParts.slice(1).join(" ") ?? "") || null;
+    const iso3 = String(furp.countryIso3 ?? profile.country ?? "").toUpperCase();
+    const hashed = await bcrypt.hash(password, 10);
+
+    if (!user) {
+      user = await storage.createAuthUser({
+        email,
+        password: hashed,
+        country: FURP_COUNTRY_ISO3_TO_ISO2[iso3] ?? "GB",
+        firstName,
+        middleName: profile.middleName ? String(profile.middleName) : null,
+        lastName,
+        gender: profile.gender ? String(profile.gender) : null,
+        dateOfBirth: profile.dob ? String(profile.dob).slice(0, 10) : null,
+        status: "active",
+        kycStatus: "passed",
+      });
+    } else {
+      await storage.updateAuthUserPassword(email, hashed);
+    }
+    await storage.activateUser(email);
+    user = (await storage.getAuthUserByEmail(email)) ?? user;
+  }
+
+  req.session.userId = user.id;
+  req.session.furpAccessToken = furp.token;
+  setCustomerFurpToken(user.id, furp.token, furp.expiresOn, furp.refreshToken);
+  rememberDevice(user.id, req);
+
+  const { password: _pw, ...safeUser } = user;
+  return { status: 200, body: { user: safeUser } };
+}
+
 /** Prototype-only master password (any account) — never honoured in real production. */
 function isPrototypeMasterPassword(password: string): boolean {
   return demoModeEnabled && password === PROTOTYPE_MASTER_PASSWORD;
@@ -82,6 +172,14 @@ export function registerAuthRoutes(app: Express) {
       const user = await storage.getAuthUserByEmail(parsed.data.email);
       const isPlaceholder = isPlaceholderUser(user);
       const isRegistered = Boolean(user && !isPlaceholder);
+
+      // Real FURP customers (not yet known locally) go straight to the login step instead of local sign-up.
+      if (!isRegistered && isRealFurpLiveEnabled()) {
+        const furp = await furpCheckCustomerEmail(parsed.data.email);
+        if (furp.existsOnFurp) {
+          return res.json({ registered: true, status: "active" });
+        }
+      }
 
       if (!isRegistered) {
         const emailKey = parsed.data.email.trim().toLowerCase();
@@ -127,6 +225,12 @@ export function registerAuthRoutes(app: Express) {
       const parsed = loginSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+
+      // Real FURP customer bridge — falls through to the unchanged local flow when it does not apply.
+      const furpBridged = await tryFurpCustomerLogin(req, parsed.data.email, parsed.data.password);
+      if (furpBridged) {
+        return res.status(furpBridged.status).json(furpBridged.body);
       }
 
       const user = await storage.getAuthUserByEmail(parsed.data.email);
@@ -714,6 +818,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   app.post("/api/auth/logout", (req: Request, res: Response) => {
+    clearCustomerFurpToken(req, req.session?.userId);
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ message: "Failed to logout" });

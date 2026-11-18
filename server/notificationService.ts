@@ -103,10 +103,18 @@ const EVENT_CATEGORY_MAP: Record<NotificationEventType, EventCategory> = {
   bonus_expired: "transactionEvents",
   bonus_reversed: "transactionEvents",
   bonus_unblocked: "transactionEvents",
+  // Support tickets — replies/resolutions from Rhemito Support
+  support_ticket_reply: "transactionEvents",
+  support_ticket_resolved: "transactionEvents",
 };
 
 /** Promotional types that still appear in the bell when marketing is off (AC-6.1.6). */
-const IN_APP_EVEN_IF_CATEGORY_OFF: NotificationEventType[] = ["reward_offer"];
+// Support replies/resolutions also always reach the bell and the Support sidebar badge.
+const IN_APP_EVEN_IF_CATEGORY_OFF: NotificationEventType[] = [
+  "reward_offer",
+  "support_ticket_reply",
+  "support_ticket_resolved",
+];
 
 // ─── Refund ETA by method (AC 11.2) ─────────────────────────────────────────
 
@@ -166,6 +174,9 @@ export function buildNotificationContent(
   const contributorCount = String(data.contributorCount ?? "");
   const targetAmount = String(data.targetAmount ?? "");
   const campaignStatus = String(data.status ?? "");
+  // Support ticket fields
+  const supportRef = String(data.referenceNumber ?? data.txnId ?? "");
+  const supportSubject = String(data.subject ?? "");
 
   const templates: Record<NotificationEventType, NotificationContent> = {
     payment_received: {
@@ -352,6 +363,15 @@ export function buildNotificationContent(
     bonus_expired: { title: String(data.title ?? "Bonus credit"), body: String(data.message ?? "") },
     bonus_reversed: { title: String(data.title ?? "Bonus credit"), body: String(data.message ?? "") },
     bonus_unblocked: { title: String(data.title ?? "Bonus credit"), body: String(data.message ?? "") },
+    // ─── Support tickets ──────────────────────────────────────────────────
+    support_ticket_reply: {
+      title: `New reply on ticket #${supportRef}`,
+      body: `Rhemito Support replied to your ticket${supportSubject ? `: ${supportSubject}` : ""}.`,
+    },
+    support_ticket_resolved: {
+      title: `Support ticket resolved #${supportRef}`,
+      body: `Support ticket #${supportRef} has been resolved. Thank you for your patience.`,
+    },
   };
 
   return templates[type] ?? { title: "Notification", body: "You have a new notification." };
@@ -777,6 +797,53 @@ export async function getUnreadCount(userId: string): Promise<number> {
     }
   }
   return count;
+}
+
+// ─── Support ticket notification helpers ─────────────────────────────────────
+
+const SUPPORT_NOTIFICATION_TYPES: string[] = ["support_ticket_reply", "support_ticket_resolved"];
+
+function supportNotificationRef(n: Notification): string {
+  const meta = (n.metadata ?? {}) as Record<string, unknown>;
+  return String(meta.referenceNumber ?? meta.txnId ?? "");
+}
+
+/** Unread in-app support ticket notifications (reply / resolved) for the Support sidebar badge. */
+export function getUnreadSupportNotificationCount(userId: string): number {
+  let count = 0;
+  for (const n of Array.from(notificationsStore.values())) {
+    if (
+      n.userId === userId &&
+      n.channel === "in_app" &&
+      !n.isRead &&
+      !n.archivedAt &&
+      SUPPORT_NOTIFICATION_TYPES.includes(n.type)
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Mark the user's unread support notifications for one ticket as read; returns how many were marked. */
+export function markSupportNotificationsReadByReference(
+  userId: string,
+  referenceNumber: string,
+): number {
+  let marked = 0;
+  const ref = String(referenceNumber).replace(/^#/, "");
+  for (const [id, n] of Array.from(notificationsStore.entries())) {
+    if (
+      n.userId === userId &&
+      !n.isRead &&
+      SUPPORT_NOTIFICATION_TYPES.includes(n.type) &&
+      supportNotificationRef(n) === ref
+    ) {
+      notificationsStore.set(id, { ...n, isRead: true });
+      marked++;
+    }
+  }
+  return marked;
 }
 
 /** Get (or create with defaults) notification preferences for a user. */
