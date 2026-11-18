@@ -2,6 +2,11 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import type { AuthUser } from "@shared/schema";
+import {
+  classifyRequirementSection,
+  getFallbackBeneficiaryRequirements,
+  sortFieldsMandatoryFirst,
+} from "@shared/beneficiaryRequirements";
 import { serverConfig } from "../config";
 
 function log(message: string, source = "mito-retail") {
@@ -282,6 +287,7 @@ export function loadMitoRetailCredentials(): MitoRetailCredentials | null {
 export function __resetMitoRetailCacheForTests(): void {
   cachedCredentials = undefined;
   cachedToken = null;
+  localMitoBeneficiariesByUser.clear();
 }
 
 export function isMitoRetailConfigured(): boolean {
@@ -300,19 +306,29 @@ export async function getMitoRetailToken(forceRefresh = false): Promise<{ token:
     return { token: cachedToken.token, partnerUserId: cachedToken.userId };
   }
 
-  const res = await fetch(`${creds.baseUrl}/api/v1/mito/Auth/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apiKey: creds.apiKey,
-    },
-    body: JSON.stringify({
-      username: creds.username,
-      password: creds.password,
-      accessServiceNumber: creds.accessServiceNumber,
-      accessAffiliateNumber: creds.accessAffiliateNumber,
-    }),
+  const authPayload = JSON.stringify({
+    username: creds.username,
+    password: creds.password,
+    accessServiceNumber: creds.accessServiceNumber,
+    accessAffiliateNumber: creds.accessAffiliateNumber,
   });
+
+  let res!: Response;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await fetch(`${creds.baseUrl}/api/v1/mito/Auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apiKey: creds.apiKey,
+      },
+      body: authPayload,
+      signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok || (res.status !== 502 && res.status !== 503 && res.status !== 504) || attempt === 1) {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 
   const body = (await res.json().catch(() => ({}))) as {
     data?: { token?: string; userId?: string };
@@ -719,6 +735,8 @@ export interface MitoProviderItem {
   providerName: string;
   providerId: string;
   isGeneric: boolean;
+  /** `true` for Swift / international options (from `Static/Providers`); `false` for local (direct-to-bank) providers. */
+  isInternational?: boolean;
 }
 
 export interface MitoLookupTypesData {
@@ -794,6 +812,261 @@ export async function getMitoProviders(params: {
   return Array.isArray(body.data) ? body.data : [];
 }
 
+export interface MitoProvidersDetailed {
+  local: MitoProviderItem[];
+  international: MitoProviderItem[];
+  /** `local` followed by `international`, de-duplicated by provider id. */
+  providers: MitoProviderItem[];
+  source: "mito" | "fallback";
+}
+
+type FallbackBankSeed = [code: string, name: string];
+
+const FALLBACK_BANKS_BY_ISO3: Record<string, FallbackBankSeed[]> = {
+  GBR: [
+    ["BARCGB", "Barclays"],
+    ["HSBCGB", "HSBC UK"],
+    ["LOYDGB", "Lloyds Bank"],
+    ["NWBKGB", "NatWest"],
+    ["SANTGB", "Santander UK"],
+    ["MONZGB", "Monzo"],
+    ["STRLGB", "Starling Bank"],
+  ],
+  NGA: [
+    ["ABNGNG", "Access Bank"],
+    ["GTBINGLA", "Guaranty Trust Bank (GTBank)"],
+    ["ZEIBNG", "Zenith Bank"],
+    ["FBNINGLA", "First Bank of Nigeria"],
+    ["UNAFNG", "United Bank for Africa (UBA)"],
+  ],
+  USA: [
+    ["CHASUS", "JPMorgan Chase"],
+    ["BOFAUS", "Bank of America"],
+    ["WFBIUS", "Wells Fargo"],
+    ["CITIUS", "Citibank"],
+  ],
+  CAN: [
+    ["ROYCCA", "Royal Bank of Canada"],
+    ["TDOMCA", "TD Canada Trust"],
+    ["NOSCCA", "Scotiabank"],
+    ["BOFMCA", "BMO Bank of Montreal"],
+  ],
+  GHA: [
+    ["GHCBGH", "GCB Bank"],
+    ["ECOCGH", "Ecobank Ghana"],
+    ["SBICGH", "Stanbic Bank Ghana"],
+    ["ABSAGH", "Absa Bank Ghana"],
+  ],
+  KEN: [
+    ["KCBLKE", "KCB Bank"],
+    ["EQBLKE", "Equity Bank"],
+    ["COOPKE", "Co-operative Bank of Kenya"],
+    ["ABSAKE", "Absa Bank Kenya"],
+  ],
+  ZAF: [
+    ["SBZAZA", "Standard Bank"],
+    ["FIRNZA", "First National Bank (FNB)"],
+    ["ABSAZA", "Absa Bank"],
+    ["NEDSZA", "Nedbank"],
+  ],
+  DEU: [
+    ["DEUTDE", "Deutsche Bank"],
+    ["COBADE", "Commerzbank"],
+    ["DRESDE", "Postbank"],
+  ],
+  FRA: [
+    ["BNPAFR", "BNP Paribas"],
+    ["SOGEFR", "Société Générale"],
+    ["AGRIFR", "Crédit Agricole"],
+  ],
+  IND: [
+    ["SBININ", "State Bank of India"],
+    ["HDFCIN", "HDFC Bank"],
+    ["ICICIN", "ICICI Bank"],
+    ["AXISIN", "Axis Bank"],
+  ],
+  CHN: [
+    ["ICBKCN", "Industrial and Commercial Bank of China"],
+    ["BKCHCN", "Bank of China"],
+    ["PCBCCN", "China Construction Bank"],
+  ],
+  ARE: [
+    ["EBILAE", "Emirates NBD"],
+    ["ADCBAE", "Abu Dhabi Commercial Bank"],
+    ["NBADAE", "First Abu Dhabi Bank"],
+  ],
+  AUS: [
+    ["CTBAAU", "Commonwealth Bank"],
+    ["WPACAU", "Westpac"],
+    ["ANZBAU", "ANZ"],
+    ["NATAAU", "National Australia Bank"],
+  ],
+  JPN: [
+    ["BOTKJP", "MUFG Bank"],
+    ["SMBCJP", "Sumitomo Mitsui Banking Corporation"],
+    ["MHCBJP", "Mizuho Bank"],
+  ],
+};
+
+const FALLBACK_MOBILE_OPERATORS_BY_ISO3: Record<string, FallbackBankSeed[]> = {
+  NGA: [
+    ["MTNNG", "MTN Mobile Money"],
+    ["AIRTNG", "Airtel Money"],
+  ],
+  GHA: [
+    ["MTNGH", "MTN Mobile Money"],
+    ["VODGH", "Vodafone Cash"],
+    ["AIRTGH", "AirtelTigo Money"],
+  ],
+  KEN: [
+    ["MPESAKE", "M-Pesa"],
+    ["AIRTKE", "Airtel Money"],
+  ],
+  ZAF: [
+    ["MTNZA", "MTN MoMo"],
+    ["VODZA", "Vodacom M-Pesa"],
+  ],
+  IND: [["PAYTMIN", "Paytm Wallet"]],
+};
+
+const DEFAULT_FALLBACK_MOBILE_OPERATORS: FallbackBankSeed[] = [
+  ["MTNMM", "MTN Mobile Money"],
+  ["AIRTMM", "Airtel Money"],
+  ["VODMM", "Vodafone Cash"],
+  ["MPESAMM", "M-Pesa"],
+];
+
+/** Id prefix of synthesized providers; they are never sent upstream to Mito as real provider ids. */
+export const FALLBACK_PROVIDER_ID_PREFIX = "fallback-";
+
+/**
+ * Clean corridor fallback providers (never empty) used when Mito is offline/unconfigured/`VITEST` or has no
+ * providers for the corridor, so the bank/operator picker always has something to show.
+ */
+export function getFallbackMitoProviders(params: {
+  countryIso3: string;
+  collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
+}): MitoProvidersDetailed {
+  const iso3 = toCountryIso3(params.countryIso3);
+  const isMobile = params.collectionMode === "MOBILEMONEY";
+  const seeds = isMobile
+    ? FALLBACK_MOBILE_OPERATORS_BY_ISO3[iso3] ?? DEFAULT_FALLBACK_MOBILE_OPERATORS
+    : FALLBACK_BANKS_BY_ISO3[iso3] ?? [[`BANK${iso3}`, "Bank"] as FallbackBankSeed];
+  const local: MitoProviderItem[] = seeds.map(([code, name]) => ({
+    providerCode: code,
+    providerName: name,
+    providerId: `${FALLBACK_PROVIDER_ID_PREFIX}${iso3.toLowerCase()}-${code.toLowerCase()}`,
+    isGeneric: false,
+    isInternational: false,
+  }));
+  const international: MitoProviderItem[] = isMobile
+    ? []
+    : [
+        {
+          providerCode: "SWIFT",
+          providerName: "Swift (international bank transfer)",
+          providerId: `${FALLBACK_PROVIDER_ID_PREFIX}${iso3.toLowerCase()}-swift`,
+          isGeneric: true,
+          isInternational: true,
+        },
+      ];
+  return { local, international, providers: [...local, ...international], source: "fallback" };
+}
+
+function normalizeStaticProvider(raw: any, forceInternational?: boolean): MitoProviderItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const providerId = String(raw.providerId ?? raw.id ?? raw.ProviderId ?? "").trim();
+  const providerName = String(raw.providerName ?? raw.name ?? raw.ProviderName ?? "").trim();
+  if (!providerId || !providerName) return null;
+  const providerCode = String(raw.providerCode ?? raw.code ?? raw.ProviderCode ?? "").trim();
+  const flag = raw.isInternational ?? raw.international ?? raw.IsInternational;
+  return {
+    providerId,
+    providerName,
+    providerCode,
+    isGeneric: Boolean(raw.isGeneric ?? raw.IsGeneric ?? false),
+    isInternational: forceInternational ?? Boolean(flag),
+  };
+}
+
+/**
+ * Local (direct-to-bank) vs international (Swift) providers. Combines `GET /api/v1/mito/Lookups/provider`
+ * (local) with `GET /api/v1/Static/Providers` (local + international), and never returns an empty picker:
+ * when offline/unconfigured/`VITEST` (or the corridor has none) it synthesizes clean fallback providers.
+ */
+export async function getMitoProvidersDetailed(params: {
+  countryIso3: string;
+  currencyCode?: string;
+  serviceCode?: string;
+  collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
+}): Promise<MitoProvidersDetailed> {
+  const resolvedCountryIso3 = toCountryIso3(params.countryIso3);
+  const resolvedMode: "BANKACCOUNT" | "MOBILEMONEY" =
+    params.collectionMode === "MOBILEMONEY" ? "MOBILEMONEY" : "BANKACCOUNT";
+  const fallback = () =>
+    getFallbackMitoProviders({ countryIso3: resolvedCountryIso3, collectionMode: resolvedMode });
+
+  if (!isMitoRetailConfigured() || process.env.VITEST) {
+    return fallback();
+  }
+
+  let lookupProviders: MitoProviderItem[] = [];
+  try {
+    lookupProviders = await getMitoProviders({ ...params, countryIso3: resolvedCountryIso3, collectionMode: resolvedMode });
+  } catch {
+    lookupProviders = [];
+  }
+
+  let staticProviders: MitoProviderItem[] = [];
+  try {
+    const creds = loadMitoRetailCredentials()!;
+    const qs = new URLSearchParams({
+      CountryIso3: resolvedCountryIso3,
+      CurrencyCode: String(params.currencyCode || "").toUpperCase(),
+      ServiceCode: params.serviceCode || "MONEYTRANSFER",
+      CollectionMode: resolvedMode,
+    });
+    const res = await fetch(`${creds.baseUrl}/api/v1/Static/Providers?${qs.toString()}`, {
+      headers: { apiKey: creds.apiKey, affiliateId: creds.accessAffiliateNumber },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { data?: unknown };
+      const data = body.data as any;
+      const list: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.providers)
+          ? data.providers
+          : [];
+      staticProviders = list.map((p) => normalizeStaticProvider(p)).filter((p): p is MitoProviderItem => Boolean(p));
+    }
+  } catch {
+    staticProviders = [];
+  }
+
+  const seen = new Set<string>();
+  const local: MitoProviderItem[] = [];
+  const international: MitoProviderItem[] = [];
+  const push = (item: MitoProviderItem, intl: boolean) => {
+    const key = `${intl ? "I" : "L"}:${item.providerId.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    (intl ? international : local).push({ ...item, isInternational: intl, isGeneric: Boolean(item.isGeneric) });
+  };
+  lookupProviders.forEach((p) => push(p, false));
+  staticProviders.forEach((p) => push(p, Boolean(p.isInternational)));
+
+  if (local.length === 0 && international.length === 0) {
+    return fallback();
+  }
+  return {
+    local,
+    international,
+    providers: [...local, ...international],
+    source: "mito",
+  };
+}
+
 /**
  * Fetches lookup codes (`reason`, `source-of-funds`, `relationships`, `identification-types`)
  * from `GET /api/v1/mito/Lookups/types`.
@@ -826,6 +1099,7 @@ export interface MitoBeneficiaryRequirementField {
   columnDataType: string;
   isRequired: boolean;
   isDisplayable: boolean;
+  section?: "Personal" | "Identification" | "Banking";
   fieldInformation?: string | null;
   dropdownOptions?: Array<{ name: string; id: string }>;
 }
@@ -841,6 +1115,7 @@ export async function getMitoBeneficiaryRequirements(params: {
   entityType: "I" | "B";
   serviceCode?: string;
   collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
+  isInternational?: boolean;
 }): Promise<MitoBeneficiaryRequirementField[]> {
   if (!isMitoRetailConfigured()) return [];
   const creds = loadMitoRetailCredentials()!;
@@ -854,6 +1129,9 @@ export async function getMitoBeneficiaryRequirements(params: {
     ServiceCode: params.serviceCode || "MONEYTRANSFER",
     collectionMode: params.collectionMode || "BANKACCOUNT",
   });
+  if (params.isInternational !== undefined) {
+    qs.set("international", params.isInternational ? "true" : "false");
+  }
 
   const res = await fetch(
     `${creds.baseUrl}/api/v1/mito/Beneficiaries/requirements?${qs.toString()}`,
@@ -867,6 +1145,249 @@ export async function getMitoBeneficiaryRequirements(params: {
     data?: MitoBeneficiaryRequirementField[];
   };
   return Array.isArray(body.data) ? body.data : [];
+}
+
+function normalizeRequirementKey(name: string): string {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Requirements for the beneficiary form: Mito's own fields when available, otherwise (offline, `VITEST`, empty
+ * or missing the banking fields of a bank deposit) the corridor templates from `@shared/beneficiaryRequirements`.
+ * Always tagged with a `section` and sorted mandatory-first.
+ */
+export async function getMitoBeneficiaryRequirementsWithFallback(params: {
+  providerId?: string;
+  toCountry: string;
+  toCurrencyCode: string;
+  entityType: "I" | "B";
+  serviceCode?: string;
+  collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
+  isInternational?: boolean;
+}): Promise<{ requirements: MitoBeneficiaryRequirementField[]; source: "mito" | "fallback" }> {
+  let upstream: MitoBeneficiaryRequirementField[] = [];
+  if (params.providerId && !params.providerId.startsWith(FALLBACK_PROVIDER_ID_PREFIX) && !process.env.VITEST) {
+    try {
+      upstream = await getMitoBeneficiaryRequirements({
+        providerId: params.providerId,
+        toCountry: params.toCountry,
+        toCurrencyCode: params.toCurrencyCode,
+        entityType: params.entityType,
+        serviceCode: params.serviceCode,
+        collectionMode: params.collectionMode,
+        isInternational: params.isInternational,
+      });
+    } catch {
+      upstream = [];
+    }
+  }
+
+  const service: "bank_deposit" | "mobile_money" =
+    params.collectionMode === "MOBILEMONEY" ? "mobile_money" : "bank_deposit";
+  const fallbackFields = getFallbackBeneficiaryRequirements({
+    currencyCode: params.toCurrencyCode,
+    countryIso3: params.toCountry,
+    entityType: params.entityType,
+    service,
+    isInternational: params.isInternational,
+  });
+
+  if (upstream.length === 0) {
+    return { requirements: fallbackFields, source: "fallback" };
+  }
+
+  const tagged: MitoBeneficiaryRequirementField[] = upstream.map((f) => ({
+    ...f,
+    section: f.section ?? classifyRequirementSection(f.name),
+  }));
+  if (service === "bank_deposit" && !tagged.some((f) => f.section === "Banking")) {
+    const have = new Set(tagged.map((f) => normalizeRequirementKey(f.name)));
+    const maxOrder = tagged.reduce((m, f) => Math.max(m, Number(f.order) || 0), 0);
+    fallbackFields
+      .filter((f) => f.section === "Banking" && !have.has(normalizeRequirementKey(f.name)))
+      .forEach((f, i) => tagged.push({ ...f, order: maxOrder + i + 1 }));
+  }
+  return { requirements: sortFieldsMandatoryFirst(tagged), source: "mito" };
+}
+
+export interface MitoProvinceState {
+  id: string;
+  name: string;
+  code?: string;
+}
+
+const FALLBACK_PROVINCES_RAW: Record<string, string> = {
+  USA: "Alabama:AL,Alaska:AK,Arizona:AZ,Arkansas:AR,California:CA,Colorado:CO,Connecticut:CT,Delaware:DE,District of Columbia:DC,Florida:FL,Georgia:GA,Hawaii:HI,Idaho:ID,Illinois:IL,Indiana:IN,Iowa:IA,Kansas:KS,Kentucky:KY,Louisiana:LA,Maine:ME,Maryland:MD,Massachusetts:MA,Michigan:MI,Minnesota:MN,Mississippi:MS,Missouri:MO,Montana:MT,Nebraska:NE,Nevada:NV,New Hampshire:NH,New Jersey:NJ,New Mexico:NM,New York:NY,North Carolina:NC,North Dakota:ND,Ohio:OH,Oklahoma:OK,Oregon:OR,Pennsylvania:PA,Rhode Island:RI,South Carolina:SC,South Dakota:SD,Tennessee:TN,Texas:TX,Utah:UT,Vermont:VT,Virginia:VA,Washington:WA,West Virginia:WV,Wisconsin:WI,Wyoming:WY",
+  CAN: "Alberta:AB,British Columbia:BC,Manitoba:MB,New Brunswick:NB,Newfoundland and Labrador:NL,Northwest Territories:NT,Nova Scotia:NS,Nunavut:NU,Ontario:ON,Prince Edward Island:PE,Quebec:QC,Saskatchewan:SK,Yukon:YT",
+  NGA: "Abia:AB,Adamawa:AD,Akwa Ibom:AK,Anambra:AN,Bauchi:BA,Bayelsa:BY,Benue:BE,Borno:BO,Cross River:CR,Delta:DE,Ebonyi:EB,Edo:ED,Ekiti:EK,Enugu:EN,Federal Capital Territory:FC,Gombe:GO,Imo:IM,Jigawa:JI,Kaduna:KD,Kano:KN,Katsina:KT,Kebbi:KE,Kogi:KO,Kwara:KW,Lagos:LA,Nasarawa:NA,Niger:NI,Ogun:OG,Ondo:ON,Osun:OS,Oyo:OY,Plateau:PL,Rivers:RI,Sokoto:SO,Taraba:TA,Yobe:YO,Zamfara:ZA",
+  IND: "Andhra Pradesh:AP,Arunachal Pradesh:AR,Assam:AS,Bihar:BR,Chhattisgarh:CG,Delhi:DL,Goa:GA,Gujarat:GJ,Haryana:HR,Himachal Pradesh:HP,Jammu and Kashmir:JK,Jharkhand:JH,Karnataka:KA,Kerala:KL,Madhya Pradesh:MP,Maharashtra:MH,Manipur:MN,Meghalaya:ML,Mizoram:MZ,Nagaland:NL,Odisha:OD,Punjab:PB,Rajasthan:RJ,Sikkim:SK,Tamil Nadu:TN,Telangana:TS,Tripura:TR,Uttar Pradesh:UP,Uttarakhand:UK,West Bengal:WB",
+  AUS: "Australian Capital Territory:ACT,New South Wales:NSW,Northern Territory:NT,Queensland:QLD,South Australia:SA,Tasmania:TAS,Victoria:VIC,Western Australia:WA",
+};
+
+export function getFallbackProvinceStates(countryIso3: string): MitoProvinceState[] {
+  const iso3 = toCountryIso3(countryIso3);
+  const raw = FALLBACK_PROVINCES_RAW[iso3];
+  if (!raw) return [];
+  return raw.split(",").map((entry) => {
+    const idx = entry.lastIndexOf(":");
+    const name = entry.slice(0, idx);
+    const code = entry.slice(idx + 1);
+    return { id: `${iso3}-${code}`, name, code };
+  });
+}
+
+/**
+ * States / provinces of a country from `GET /api/v1/Static/ProvinceState?countryiso3=...`
+ * (static fallback for USA, CAN, NGA, IND, AUS when offline/unconfigured/`VITEST`/empty).
+ */
+export async function getMitoProvinceStates(countryIso3: string): Promise<MitoProvinceState[]> {
+  const iso3 = toCountryIso3(countryIso3);
+  if (!isMitoRetailConfigured() || process.env.VITEST) return getFallbackProvinceStates(iso3);
+  try {
+    const creds = loadMitoRetailCredentials()!;
+    const res = await fetch(
+      `${creds.baseUrl}/api/v1/Static/ProvinceState?countryiso3=${encodeURIComponent(iso3)}`,
+      {
+        headers: { apiKey: creds.apiKey, affiliateId: creds.accessAffiliateNumber },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { data?: unknown };
+      const data = body.data as any;
+      const list: any[] = Array.isArray(data) ? data : Array.isArray(data?.provinces) ? data.provinces : [];
+      const mapped = list
+        .map((p): MitoProvinceState | null => {
+          const id = String(p?.id ?? p?.stateProvinceId ?? p?.provinceStateId ?? "").trim();
+          const name = String(p?.name ?? p?.stateProvinceName ?? p?.provinceStateName ?? "").trim();
+          if (!name) return null;
+          const code = String(p?.code ?? p?.stateProvinceCode ?? "").trim();
+          return { id: id || name, name, ...(code ? { code } : {}) };
+        })
+        .filter((p): p is MitoProvinceState => Boolean(p));
+      if (mapped.length > 0) return mapped;
+    }
+  } catch {
+    // fall through to static fallback
+  }
+  return getFallbackProvinceStates(iso3);
+}
+
+/** Result of `verifyMitoBankingDetails` — never an error: `canContinue` is always `true`. */
+export interface MitoBankVerificationResult {
+  resolved: boolean;
+  canContinue: true;
+  source: "mito" | "unavailable" | "mock";
+  accountHolderName: string | null;
+  message: string | null;
+  details?: Record<string, string>;
+}
+
+const BANK_LOOKUP_UNAVAILABLE_MESSAGE =
+  "Automatic account name verification isn't available for this bank right now. Please double-check the account details and continue.";
+
+/**
+ * "Search bank details" — `POST /api/v1/Bank/GetBankingDetails` (`countryCode` is ISO3, e.g. `NGA`, `GBR`).
+ * Never throws and never signals failure: unresolved lookups return `{ resolved: false, canContinue: true }`.
+ */
+export async function verifyMitoBankingDetails(params: {
+  international?: boolean;
+  countryIso3: string;
+  providerId?: string;
+  param: Array<{ parameter: string; value: string }>;
+}): Promise<MitoBankVerificationResult> {
+  const unavailable = (source: "mito" | "unavailable" = "unavailable"): MitoBankVerificationResult => ({
+    resolved: false,
+    canContinue: true,
+    source,
+    accountHolderName: null,
+    message: BANK_LOOKUP_UNAVAILABLE_MESSAGE,
+  });
+
+  if (process.env.MITO_BANK_LOOKUP_MOCK === "1") {
+    const details: Record<string, string> = {};
+    for (const p of params.param || []) {
+      if (p?.parameter && p?.value) details[String(p.parameter)] = String(p.value);
+    }
+    return {
+      resolved: true,
+      canContinue: true,
+      source: "mock",
+      accountHolderName: "MOCK ACCOUNT HOLDER",
+      message: null,
+      details,
+    };
+  }
+
+  if (!isMitoRetailConfigured() || process.env.VITEST) return unavailable("unavailable");
+
+  try {
+    const creds = loadMitoRetailCredentials()!;
+    const { token } = await getMitoRetailToken();
+    const payload: Record<string, unknown> = {
+      international: Boolean(params.international),
+      countryCode: toCountryIso3(params.countryIso3).toUpperCase(),
+      param: params.param,
+    };
+    if (params.providerId && !params.providerId.startsWith(FALLBACK_PROVIDER_ID_PREFIX)) {
+      payload.providerId = params.providerId;
+    }
+    const res = await fetch(`${creds.baseUrl}/api/v1/Bank/GetBankingDetails`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        apiKey: creds.apiKey,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return unavailable("mito");
+
+    const body = (await res.json().catch(() => ({}))) as { data?: Record<string, any> | null };
+    const data = (body?.data && typeof body.data === "object" ? body.data : {}) as Record<string, any>;
+    const pick = (...keys: string[]): string => {
+      for (const k of keys) {
+        const v = data[k];
+        if (v !== undefined && v !== null && String(v).trim()) return String(v).trim();
+      }
+      return "";
+    };
+    const holder = pick("accountHolderName", "AccountHolderName", "account_name");
+    const resolvedBankName = pick("bank_name", "bankName", "BankName");
+    if (!holder && !resolvedBankName) return unavailable("mito");
+
+    const details: Record<string, string> = {};
+    const assign = (name: string, ...keys: string[]) => {
+      const v = pick(...keys);
+      if (v) details[name] = v;
+    };
+    assign("account_number", "account_number", "accountNumber", "AccountNumber");
+    assign("bank_name", "bank_name", "bankName", "BankName");
+    assign("bank_address", "bank_address", "bankAddress", "BankAddress");
+    assign("bank_country", "bank_country", "bankCountry", "BankCountry");
+    assign("iban", "iban", "Iban");
+    assign("bic_swift", "bic_swift", "bicSwift", "BicSwift");
+    assign("sort_code", "sort_code", "sortCode", "SortCode");
+    assign("routing_number", "routing_number", "routingNumber", "RoutingNumber", "routing");
+    assign("ifsc", "ifsc", "Ifsc");
+    assign("aba", "aba", "Aba");
+    assign("bsb_code", "bsb_code", "bsbCode", "BsbCode", "bsbcode");
+    assign("branch_code", "branch_code", "branchCode", "BranchCode");
+    assign("bank_code", "bank_code", "bankCode", "BankCode");
+    assign("clabe", "clabe", "Clabe");
+    assign("cnaps", "cnaps", "Cnaps");
+    return {
+      resolved: true,
+      canContinue: true,
+      source: "mito",
+      accountHolderName: holder || null,
+      message: null,
+      details,
+    };
+  } catch {
+    return unavailable("unavailable");
+  }
 }
 
 export interface MitoBeneficiaryRecord {
@@ -905,6 +1426,16 @@ export interface MitoBeneficiaryRecord {
   reasonDescription?: string | null;
   otherReason?: string | null;
   narration?: string | null;
+  /** Beneficiary-journey parity (DEC-2026-11-19) — additive, optional. */
+  addressLine2?: string | null;
+  otherRelation?: string | null;
+  dob?: string | null;
+  gender?: string | null;
+  bankCode?: string | null;
+  clabe?: string | null;
+  cnaps?: string | null;
+  isInternational?: boolean | null;
+  accountHolderName?: string | null;
   createdAt: string | null;
 }
 
@@ -915,7 +1446,7 @@ export type MitoBeneficiaryItem = MitoBeneficiaryRecord;
  * (with optional query params `serviceCode`, `collectionMode`, `legalEntityType`, `countryIso3`, `currencyIso`, `providerId`, `PageNo`)
  * and enriches each beneficiary with banking details from `GET /api/v1/mito/Beneficiaries/{beneficiaryId}`.
  */
-export async function getMitoBeneficiaries(params: {
+interface MitoBeneficiaryListParams {
   userId: string;
   serviceCode?: string;
   collectionMode?: string;
@@ -925,7 +1456,9 @@ export async function getMitoBeneficiaries(params: {
   providerId?: string;
   pageNo?: number;
   searchingText?: string;
-}): Promise<MitoBeneficiaryRecord[]> {
+}
+
+async function getMitoRemoteBeneficiaries(params: MitoBeneficiaryListParams): Promise<MitoBeneficiaryRecord[]> {
   if (!isMitoRetailConfigured() || !params.userId) return [];
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
@@ -1076,6 +1609,11 @@ loadUpdatedBeneficiariesFromDisk();
           detail.narration || detail.paymentNarration
             ? String(detail.narration || detail.paymentNarration)
             : null,
+        addressLine2: detail.addressLine2 ? String(detail.addressLine2) : null,
+        otherRelation: detail.otherRelation ? String(detail.otherRelation) : null,
+        bankCode: detail.bankCode ? String(detail.bankCode) : null,
+        clabe: detail.clabe ? String(detail.clabe) : null,
+        cnaps: detail.cnaps ? String(detail.cnaps) : null,
         createdAt: detail.createdAt ?? item.createdAt ?? null,
       };
       const sigKey = makeDeletedSignature(baseItem.name, baseItem.acctNumber || baseItem.iban || baseItem.mobileNo);
@@ -1132,6 +1670,238 @@ loadUpdatedBeneficiariesFromDisk();
   }
 
   return activeDetailed;
+}
+
+/* ------------------------------------------------------------------ */
+/* Locally created beneficiaries (offline / unconfigured / VITEST).    */
+/* Persisted to `.dev-state/mito-local-beneficiaries.json` (in-memory  */
+/* only under VITEST) and merged into `getMitoBeneficiaries`.          */
+/* ------------------------------------------------------------------ */
+
+export const LOCAL_BENEFICIARY_ID_PREFIX = "LOCAL-";
+
+export function isLocalMitoBeneficiaryId(id: string | null | undefined): boolean {
+  return String(id || "").trim().toUpperCase().startsWith(LOCAL_BENEFICIARY_ID_PREFIX);
+}
+
+const LOCAL_BENEFICIARIES_FILE = path.resolve(
+  process.cwd(),
+  ".dev-state",
+  "mito-local-beneficiaries.json",
+);
+const localMitoBeneficiariesByUser = new Map<string, MitoBeneficiaryRecord[]>();
+let localMitoBeneficiariesLoaded = false;
+
+function loadLocalMitoBeneficiariesFromDisk(): void {
+  if (localMitoBeneficiariesLoaded) return;
+  localMitoBeneficiariesLoaded = true;
+  if (process.env.VITEST) return;
+  try {
+    if (!fs.existsSync(LOCAL_BENEFICIARIES_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(LOCAL_BENEFICIARIES_FILE, "utf8")) as Record<
+      string,
+      MitoBeneficiaryRecord[]
+    >;
+    if (raw && typeof raw === "object") {
+      for (const [userKey, list] of Object.entries(raw)) {
+        if (Array.isArray(list)) localMitoBeneficiariesByUser.set(userKey, list);
+      }
+    }
+  } catch {
+    // ignore disk read errors
+  }
+}
+
+function saveLocalMitoBeneficiariesToDisk(): void {
+  if (process.env.VITEST) return;
+  try {
+    const dir = path.dirname(LOCAL_BENEFICIARIES_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const serialized: Record<string, MitoBeneficiaryRecord[]> = {};
+    localMitoBeneficiariesByUser.forEach((list, key) => {
+      serialized[key] = list;
+    });
+    fs.writeFileSync(LOCAL_BENEFICIARIES_FILE, JSON.stringify(serialized, null, 2), "utf8");
+  } catch {
+    // ignore disk write errors
+  }
+}
+
+function saveLocalMitoBeneficiary(userKey: string, record: MitoBeneficiaryRecord): void {
+  loadLocalMitoBeneficiariesFromDisk();
+  const list = localMitoBeneficiariesByUser.get(userKey) ?? [];
+  const idUpper = record.beneficiaryId.toUpperCase();
+  const next = [record, ...list.filter((r) => r.beneficiaryId.toUpperCase() !== idUpper)];
+  localMitoBeneficiariesByUser.set(userKey, next);
+  saveLocalMitoBeneficiariesToDisk();
+}
+
+function removeLocalMitoBeneficiary(beneficiaryId: string): void {
+  loadLocalMitoBeneficiariesFromDisk();
+  const idUpper = String(beneficiaryId || "").trim().toUpperCase();
+  if (!idUpper) return;
+  let changed = false;
+  localMitoBeneficiariesByUser.forEach((list, key) => {
+    const next = list.filter((r) => r.beneficiaryId.toUpperCase() !== idUpper);
+    if (next.length !== list.length) {
+      localMitoBeneficiariesByUser.set(key, next);
+      changed = true;
+    }
+  });
+  if (changed) saveLocalMitoBeneficiariesToDisk();
+}
+
+function listLocalMitoBeneficiaries(params: MitoBeneficiaryListParams): MitoBeneficiaryRecord[] {
+  loadLocalMitoBeneficiariesFromDisk();
+  loadDeletedBeneficiariesFromDisk();
+  loadUpdatedBeneficiariesFromDisk();
+  const all = localMitoBeneficiariesByUser.get(params.userId) ?? [];
+  const wantedMode = params.collectionMode ? String(params.collectionMode).toUpperCase() : "";
+  const wantedEntity = params.legalEntityType ? String(params.legalEntityType).trim().toLowerCase() : "";
+  const q = (params.searchingText || "").trim().toLowerCase();
+  const items = all
+    .map((rec) => {
+      const override = updatedMitoBeneficiariesById.get(rec.beneficiaryId.toUpperCase());
+      return override ? ({ ...rec, ...override, beneficiaryId: rec.beneficiaryId } as MitoBeneficiaryRecord) : rec;
+    })
+    .filter((rec) => {
+      if (deletedMitoBeneficiaryIds.has(rec.beneficiaryId.toUpperCase())) return false;
+      if (wantedMode && String(rec.collectionMode || "").toUpperCase() !== wantedMode) return false;
+      if (params.countryIso3 && rec.countryIso3.toUpperCase() !== params.countryIso3.toUpperCase()) return false;
+      if (params.currencyIso && rec.currency.toUpperCase() !== params.currencyIso.toUpperCase()) return false;
+      if (params.providerId && rec.providerId !== params.providerId) return false;
+      if (wantedEntity) {
+        const isBiz = rec.legalEntityType === "business";
+        const wantBiz = wantedEntity === "b" || wantedEntity === "business";
+        const wantInd = wantedEntity === "i" || wantedEntity === "individual";
+        if ((wantBiz && !isBiz) || (wantInd && isBiz)) return false;
+      }
+      if (q) {
+        const hay = [
+          rec.name,
+          rec.firstName,
+          rec.lastName,
+          rec.companyName || "",
+          rec.beneficiaryNickname || "",
+          rec.bankName,
+          rec.acctNumber,
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  return items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+/**
+ * Sender's beneficiaries: Mito's list (when configured and reachable) merged with beneficiaries created locally
+ * while Mito was unconfigured/offline, de-duplicated by id and name+account signature.
+ */
+export async function getMitoBeneficiaries(params: MitoBeneficiaryListParams): Promise<MitoBeneficiaryRecord[]> {
+  if (!params.userId) return [];
+  let remote: MitoBeneficiaryRecord[] = [];
+  try {
+    remote = await getMitoRemoteBeneficiaries(params);
+  } catch (err) {
+    log(`⚠️ Could not load Mito beneficiaries, using local records only: ${String((err as Error)?.message || err)}`, "mito-retail");
+    remote = [];
+  }
+  const local = listLocalMitoBeneficiaries(params);
+  if (local.length === 0) return remote;
+
+  const seen = new Set<string>();
+  remote.forEach((b) => {
+    const idUpper = String(b.beneficiaryId || "").trim().toUpperCase();
+    if (idUpper) seen.add(idUpper);
+    const sig = makeDeletedSignature(b.name, b.acctNumber || b.iban || b.mobileNo);
+    if (sig) seen.add(sig);
+  });
+  const extras = local.filter((b) => {
+    const sig = makeDeletedSignature(b.name, b.acctNumber || b.iban || b.mobileNo);
+    if (seen.has(b.beneficiaryId.toUpperCase()) || (sig && seen.has(sig))) return false;
+    if (sig) seen.add(sig);
+    return true;
+  });
+  return [...extras, ...remote];
+}
+
+/**
+ * Nickname rules: at least 5 letters/numbers (other characters are ignored) and unique among the sender's
+ * saved beneficiaries; Mito's `ValidateBeneficiaryNickName` is consulted when reachable. Never throws.
+ */
+export async function validateMitoBeneficiaryNickname(params: {
+  nickName: string;
+  userId?: string;
+  excludeBeneficiaryId?: string;
+}): Promise<{ valid: boolean; available: boolean; source: "local" | "mito"; message: string | null; nickName: string }> {
+  const clean = String(params.nickName || "").replace(/[^A-Za-z0-9]/g, "");
+  if (clean.length < 5) {
+    return {
+      valid: false,
+      available: false,
+      source: "local",
+      message: "Nickname must have at least 5 letters or numbers.",
+      nickName: clean,
+    };
+  }
+
+  const duplicateMessage = "You already have a recipient with this nickname. Please choose another.";
+  const excludeId = String(params.excludeBeneficiaryId || "").trim().toUpperCase();
+  const lowered = clean.toLowerCase();
+  try {
+    if (params.userId) {
+      const saved = await Promise.race([
+        getMitoBeneficiaries({ userId: params.userId }),
+        new Promise<MitoBeneficiaryRecord[]>((resolve) => setTimeout(() => resolve([]), 4000)),
+      ]);
+      const dup = saved.some(
+        (b) =>
+          String(b.beneficiaryId || "").trim().toUpperCase() !== excludeId &&
+          String(b.beneficiaryNickname || "").replace(/[^A-Za-z0-9]/g, "").toLowerCase() === lowered,
+      );
+      if (dup) {
+        return { valid: true, available: false, source: "local", message: duplicateMessage, nickName: clean };
+      }
+    }
+  } catch {
+    // local duplicate check is best-effort
+  }
+
+  if (isMitoRetailConfigured() && !process.env.VITEST) {
+    try {
+      const creds = loadMitoRetailCredentials()!;
+      const { token } = await getMitoRetailToken();
+      const res = await fetch(
+        `${creds.baseUrl}/api/v1/mito/Beneficiaries/ValidateBeneficiaryNickName?nickName=${encodeURIComponent(clean)}`,
+        {
+          headers: { Authorization: `Bearer ${token}`, apiKey: creds.apiKey },
+          signal: AbortSignal.timeout(6000),
+        },
+      );
+      const body = (await res.json().catch(() => ({}))) as { data?: unknown; message?: string };
+      if (res.ok) {
+        const d = body?.data as any;
+        const availableFlag =
+          typeof d === "boolean" ? d : typeof d?.isAvailable === "boolean" ? d.isAvailable : typeof d?.valid === "boolean" ? d.valid : true;
+        return {
+          valid: true,
+          available: availableFlag,
+          source: "mito",
+          message: availableFlag ? null : duplicateMessage,
+          nickName: clean,
+        };
+      }
+      if (/already|exist|taken|duplicate|in use/i.test(String(body?.message || ""))) {
+        return { valid: true, available: false, source: "mito", message: duplicateMessage, nickName: clean };
+      }
+    } catch {
+      // fall back gracefully below
+    }
+  }
+
+  return { valid: true, available: true, source: "local", message: null, nickName: clean };
 }
 
 function makeValidMitoNickname(raw?: string, fallbackBase?: string): string {
@@ -1215,7 +1985,7 @@ export function formatFriendlyMitoBeneficiaryError(rawMessage?: string): string 
   return "We couldn't verify and save this beneficiary's details with the bank. Please double-check all fields and try again.";
 }
 
-export async function createMitoBeneficiary(input: {
+export interface CreateMitoBeneficiaryInput {
   userId: string;
   serviceCode?: string;
   collectionMode: "BANKACCOUNT" | "MOBILEMONEY";
@@ -1245,7 +2015,128 @@ export async function createMitoBeneficiary(input: {
   postcode?: string;
   stateOrProvince?: string;
   mobileNo?: string;
-}): Promise<{ beneficiaryId: string; providerId: string; providerCode?: string; createdNew: boolean } | null> {
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  addressLine2?: string;
+  otherRelation?: string;
+  otherReason?: string;
+  narration?: string;
+  dob?: string;
+  gender?: string;
+  bankCode?: string;
+  clabe?: string;
+  cnaps?: string;
+  isInternational?: boolean;
+  accountHolderName?: string;
+}
+
+export interface CreateMitoBeneficiaryResult {
+  beneficiaryId: string;
+  providerId: string;
+  providerCode?: string;
+  createdNew: boolean;
+  /** 	rue when the beneficiary only exists locally (Mito unconfigured / offline / synthetic provider). */
+  localOnly?: boolean;
+}
+
+function isNetworkFailure(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; message?: string; code?: string; cause?: { code?: string } };
+  if (e instanceof TypeError) return true;
+  if (e.name === "AbortError" || e.name === "TimeoutError") return true;
+  if (/HTTP 5\d\d|failed with HTTP 5/i.test(String(e.message || ""))) return true;
+  const code = String(e.code || e.cause?.code || "");
+  return /ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|UND_ERR/i.test(code);
+}
+
+function createLocalMitoBeneficiary(input: CreateMitoBeneficiaryInput): CreateMitoBeneficiaryResult {
+  const isBusiness = input.legalEntityType === "B";
+  const first = String(input.firstName || "").trim();
+  const last = String(input.lastName || "").trim();
+  const companyName = isBusiness ? String(input.companyName || first || "Business").trim() : null;
+  const fullName = isBusiness ? companyName || "Business" : [first, last].filter(Boolean).join(" ") || "Beneficiary";
+  const beneficiaryId = `${LOCAL_BENEFICIARY_ID_PREFIX}${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+  const strip = (v?: string) => String(v || "").replace(/\s+/g, "");
+  const nick = String(input.beneficiaryNickname || "").replace(/[^A-Za-z0-9]/g, "");
+  const record: MitoBeneficiaryRecord = {
+    beneficiaryId,
+    name: fullName,
+    firstName: isBusiness ? companyName || first : first,
+    lastName: isBusiness ? last || "Business" : last,
+    companyName,
+    beneficiaryNickname: nick.length >= 5 ? nick : null,
+    legalEntityType: isBusiness ? "business" : "individual",
+    countryIso3: input.countryIso3.toUpperCase(),
+    country: input.countryIso3.toUpperCase(),
+    currency: input.currencyIso.toUpperCase(),
+    serviceCode: input.serviceCode || "MONEYTRANSFER",
+    collectionMode: input.collectionMode,
+    providerId: input.providerId || null,
+    bankName: String(input.bankName || (input.collectionMode === "MOBILEMONEY" ? "Mobile Money" : "Bank Transfer")).trim(),
+    acctNumber: strip(input.acctNumber || input.mobileNo),
+    sortCode: strip(input.sortCode),
+    iban: strip(input.iban),
+    bicSwift: strip(input.bicSwift),
+    aba: strip(input.aba),
+    ifsc: strip(input.ifsc),
+    bsbCode: strip(input.bsbCode),
+    branchCode: strip(input.branchCode),
+    address: String(input.address || "").trim(),
+    city: String(input.city || "").trim(),
+    postcode: String(input.postcode || "").trim(),
+    stateOrProvince: String(input.stateOrProvince || "").trim(),
+    mobileNo: strip(input.mobileNo),
+    relationId: input.relationId?.trim() || null,
+    reasonId: input.reasonId?.trim() || null,
+    relationship: input.relationship?.trim() || null,
+    relationDescription: null,
+    reason: null,
+    reasonDescription: null,
+    otherReason: input.otherReason?.trim() || null,
+    narration: input.narration?.trim() || null,
+    addressLine2: input.addressLine2?.trim() || null,
+    otherRelation: input.otherRelation?.trim() || null,
+    dob: input.dob?.trim() || null,
+    gender: input.gender?.trim() || null,
+    bankCode: strip(input.bankCode) || null,
+    clabe: strip(input.clabe) || null,
+    cnaps: strip(input.cnaps) || null,
+    isInternational: input.isInternational ?? null,
+    accountHolderName: input.accountHolderName?.trim() || null,
+    createdAt: new Date().toISOString(),
+  };
+  saveLocalMitoBeneficiary(input.userId, record);
+  log(`ℹ️ Saved beneficiary locally (beneficiaryId=${beneficiaryId}); Mito is unavailable`, "mito-retail");
+  return {
+    beneficiaryId,
+    providerId: input.providerId,
+    providerCode: input.providerCode,
+    createdNew: true,
+    localOnly: true,
+  };
+}
+
+/**
+ * Creates a beneficiary in Mito (when configured) or locally (when Mito is unconfigured/offline or the provider is a
+ * synthesized fallback). Upstream validation failures still throw MitoBeneficiaryCreationError.
+ */
+export async function createMitoBeneficiary(
+  input: CreateMitoBeneficiaryInput,
+): Promise<CreateMitoBeneficiaryResult | null> {
+  if (!isMitoRetailConfigured() || String(input.providerId || "").startsWith(FALLBACK_PROVIDER_ID_PREFIX)) {
+    return createLocalMitoBeneficiary(input);
+  }
+  try {
+    return await createMitoRemoteBeneficiary(input);
+  } catch (err) {
+    if (err instanceof MitoBeneficiaryCreationError) throw err;
+    if (isNetworkFailure(err)) return createLocalMitoBeneficiary(input);
+    throw err;
+  }
+}
+
+async function createMitoRemoteBeneficiary(
+  input: CreateMitoBeneficiaryInput,
+): Promise<CreateMitoBeneficiaryResult | null> {
   if (!isMitoRetailConfigured()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
@@ -1294,6 +2185,16 @@ export async function createMitoBeneficiary(input: {
   if (input.ifsc) payload.ifsc = input.ifsc.replace(/\s+/g, "");
   if (input.bsbCode) payload.bsbCode = input.bsbCode.replace(/\s+/g, "");
   if (input.branchCode) payload.branchCode = input.branchCode.replace(/\s+/g, "");
+  if (input.bankCode) payload.bankCode = input.bankCode.replace(/\s+/g, "");
+  if (input.clabe) payload.clabe = input.clabe.replace(/\s+/g, "");
+  if (input.cnaps) payload.cnaps = input.cnaps.replace(/\s+/g, "");
+  if (input.addressLine2) payload.addressLine2 = input.addressLine2.trim();
+  if (input.otherRelation) payload.otherRelation = input.otherRelation.trim();
+  if (input.otherReason) payload.otherReason = input.otherReason.trim();
+  if (input.narration) payload.narration = input.narration.trim();
+  if (input.dob) payload.dob = input.dob.trim();
+  if (input.gender) payload.gender = input.gender.trim();
+  if (input.isInternational !== undefined) payload.isInternational = Boolean(input.isInternational);
   if (input.address) payload.address = input.address.trim();
   if (input.city) payload.city = input.city.trim();
   if (input.postcode) payload.postcode = input.postcode.trim();
@@ -1448,17 +2349,19 @@ loadUpdatedBeneficiariesFromDisk();
     deletedMitoBeneficiarySignatures.add(`${String(params.name).trim().toLowerCase()}|`);
   }
   saveDeletedBeneficiariesToDisk();
+  if (isLocalMitoBeneficiaryId(cleanId)) removeLocalMitoBeneficiary(cleanId);
 
-  if (!isMitoRetailConfigured() || !cleanId || cleanId === "LOCAL") return true;
+  if (!isMitoRetailConfigured() || !cleanId || cleanId === "LOCAL" || isLocalMitoBeneficiaryId(cleanId)) return true;
   try {
     const creds = loadMitoRetailCredentials()!;
     const { token } = await getMitoRetailToken();
-    const qs = params.userId ? `?userId=${encodeURIComponent(params.userId)}` : "";
+    // Verified furp02-core contract: GET /api/v1/mito/Beneficiaries/DeleteBeneficiary?beneficiaryId=...
     const res = await fetch(
-      `${creds.baseUrl}/api/v1/mito/Beneficiaries/${encodeURIComponent(cleanId)}${qs}`,
+      `${creds.baseUrl}/api/v1/mito/Beneficiaries/DeleteBeneficiary?beneficiaryId=${encodeURIComponent(String(params.beneficiaryId || "").trim())}`,
       {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}`, apiKey: creds.apiKey },
+        signal: AbortSignal.timeout(10000),
       },
     );
     if (res.ok) {
@@ -1495,6 +2398,30 @@ export async function updateMitoBeneficiary(params: {
   bicSwift?: string;
   mobileNo?: string;
   beneficiaryNickname?: string | null;
+  /** Beneficiary-journey parity (DEC-2026-11-19) — additive, optional. */
+  address?: string;
+  addressLine2?: string;
+  city?: string;
+  postcode?: string;
+  stateOrProvince?: string;
+  relationId?: string;
+  otherRelation?: string;
+  reasonId?: string;
+  otherReason?: string;
+  narration?: string;
+  aba?: string;
+  ifsc?: string;
+  bsbCode?: string;
+  branchCode?: string;
+  bankCode?: string;
+  clabe?: string;
+  cnaps?: string;
+  nationalityCountryIso3?: string;
+  birthCountryIso3?: string;
+  dob?: string;
+  gender?: string;
+  isInternational?: boolean;
+  accountHolderName?: string;
 }): Promise<Partial<MitoBeneficiaryItem>> {
   loadUpdatedBeneficiariesFromDisk();
   const cleanId = String(params.beneficiaryId || "").trim().toUpperCase();
@@ -1526,6 +2453,33 @@ export async function updateMitoBeneficiary(params: {
     ...(params.iban !== undefined ? { iban: params.iban.replace(/\s+/g, "") } : {}),
     ...(params.bicSwift !== undefined ? { bicSwift: params.bicSwift.replace(/\s+/g, "") } : {}),
     ...(params.mobileNo !== undefined ? { mobileNo: params.mobileNo.replace(/\s+/g, "") } : {}),
+    ...(params.address !== undefined ? { address: params.address.trim() } : {}),
+    ...(params.addressLine2 !== undefined ? { addressLine2: params.addressLine2.trim() } : {}),
+    ...(params.city !== undefined ? { city: params.city.trim() } : {}),
+    ...(params.postcode !== undefined ? { postcode: params.postcode.trim() } : {}),
+    ...(params.stateOrProvince !== undefined ? { stateOrProvince: params.stateOrProvince.trim() } : {}),
+    ...(params.relationId ? { relationId: params.relationId.trim() } : {}),
+    ...(params.otherRelation !== undefined ? { otherRelation: params.otherRelation.trim() } : {}),
+    ...(params.reasonId ? { reasonId: params.reasonId.trim() } : {}),
+    ...(params.otherReason !== undefined ? { otherReason: params.otherReason.trim() } : {}),
+    ...(params.narration !== undefined ? { narration: params.narration.trim() } : {}),
+    ...(params.aba !== undefined ? { aba: params.aba.replace(/\s+/g, "") } : {}),
+    ...(params.ifsc !== undefined ? { ifsc: params.ifsc.replace(/\s+/g, "") } : {}),
+    ...(params.bsbCode !== undefined ? { bsbCode: params.bsbCode.replace(/\s+/g, "") } : {}),
+    ...(params.branchCode !== undefined ? { branchCode: params.branchCode.replace(/\s+/g, "") } : {}),
+    ...(params.bankCode !== undefined ? { bankCode: params.bankCode.replace(/\s+/g, "") } : {}),
+    ...(params.clabe !== undefined ? { clabe: params.clabe.replace(/\s+/g, "") } : {}),
+    ...(params.cnaps !== undefined ? { cnaps: params.cnaps.replace(/\s+/g, "") } : {}),
+    ...(params.dob !== undefined ? { dob: params.dob.trim() } : {}),
+    ...(params.gender !== undefined ? { gender: params.gender.trim() } : {}),
+    ...(params.isInternational !== undefined ? { isInternational: Boolean(params.isInternational) } : {}),
+    ...(params.accountHolderName !== undefined ? { accountHolderName: params.accountHolderName.trim() } : {}),
+    ...(params.beneficiaryNickname !== undefined && params.beneficiaryNickname !== null
+      ? (() => {
+          const nick = String(params.beneficiaryNickname).replace(/[^A-Za-z0-9]/g, "");
+          return nick.length >= 5 ? { beneficiaryNickname: nick } : {};
+        })()
+      : {}),
   };
 
   if (cleanId && cleanId !== "LOCAL") {
@@ -1539,40 +2493,62 @@ export async function updateMitoBeneficiary(params: {
     acctNumber: cleanAcct,
   });
 
-  if (isMitoRetailConfigured() && cleanId && cleanId !== "LOCAL") {
+  if (isMitoRetailConfigured() && cleanId && cleanId !== "LOCAL" && !isLocalMitoBeneficiaryId(cleanId)) {
     try {
       const creds = loadMitoRetailCredentials()!;
       const { token } = await getMitoRetailToken();
-      const putPayload: Record<string, unknown> = {
-        beneficiaryId: cleanId,
+      const nickClean = String(params.beneficiaryNickname || "").replace(/[^A-Za-z0-9]/g, "");
+      const existingNick = String(existingOverride.beneficiaryNickname || "").replace(/[^A-Za-z0-9]/g, "");
+      // Verified furp02-core contract: POST /api/v1/mito/Beneficiaries/UpdateBeneficiary (camelCase UpdateBeneficiaryRequest)
+      const updatePayload: Record<string, unknown> = {
+        beneficiaryId: String(params.beneficiaryId || "").trim(),
         userId: params.userId || undefined,
         legalEntityType: isBusiness ? "B" : "I",
+        beneficiaryNickname:
+          nickClean.length >= 5
+            ? nickClean
+            : existingNick.length >= 5
+              ? existingNick
+              : makeValidMitoNickname(undefined, fullName),
+        companyName: nextOverride.companyName || undefined,
         firstName: nextOverride.firstName,
         lastName: nextOverride.lastName,
-        companyName: nextOverride.companyName || undefined,
+        mobileNo: nextOverride.mobileNo || undefined,
+        postcode: nextOverride.postcode || undefined,
+        city: nextOverride.city || undefined,
+        address: nextOverride.address || undefined,
+        addressLine2: nextOverride.addressLine2 || undefined,
+        stateOrProvince: nextOverride.stateOrProvince || undefined,
+        nationalityCountryIso3: params.nationalityCountryIso3 || undefined,
+        birthCountryIso3: params.birthCountryIso3 || undefined,
+        reasonId: nextOverride.reasonId || undefined,
+        otherReason: nextOverride.otherReason || undefined,
+        relationId: nextOverride.relationId || undefined,
+        otherRelation: nextOverride.otherRelation || undefined,
+        narration: nextOverride.narration || undefined,
         acctNumber: nextOverride.acctNumber,
         bankName: nextOverride.bankName,
-        providerId: nextOverride.providerId || undefined,
         sortCode: nextOverride.sortCode || undefined,
         iban: nextOverride.iban || undefined,
         bicSwift: nextOverride.bicSwift || undefined,
-        mobileNo: nextOverride.mobileNo || undefined,
-        beneficiaryNickname: makeValidMitoNickname(
-          params.beneficiaryNickname || undefined,
-          fullName,
-        ),
+        aba: nextOverride.aba || undefined,
+        ifsc: nextOverride.ifsc || undefined,
+        bsbCode: nextOverride.bsbCode || undefined,
+        branchCode: nextOverride.branchCode || undefined,
+        bankCode: nextOverride.bankCode || undefined,
+        clabe: nextOverride.clabe || undefined,
+        cnaps: nextOverride.cnaps || undefined,
       };
-      const res = await fetch(
-        `${creds.baseUrl}/api/v1/mito/Beneficiaries/${encodeURIComponent(cleanId)}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(putPayload),
+      const res = await fetch(`${creds.baseUrl}/api/v1/mito/Beneficiaries/UpdateBeneficiary`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apiKey: creds.apiKey,
         },
-      );
+        body: JSON.stringify(updatePayload),
+        signal: AbortSignal.timeout(10000),
+      });
       if (res.ok) {
         log(`✅ Updated Mito Beneficiary upstream (beneficiaryId=${cleanId})`, "mito-retail");
       } else {

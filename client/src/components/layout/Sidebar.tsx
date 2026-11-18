@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
 import { resetDeviceId } from "@/lib/deviceId";
 import { useToast } from "@/hooks/use-toast";
@@ -37,7 +37,7 @@ const navItems: NavItemData[] = [
   { icon: LayoutDashboard, label: "Overview", href: "/", enabled: true, filledIcon: true },
   { icon: BarChart2, label: "Transactions", href: "/transactions", enabled: true },
   { icon: Gift, label: "Reward$", href: "/bonus-discounts", enabled: true },
-  { icon: User, label: "Recipients", href: "/senders-recipients", enabled: true, filledIcon: true },
+  { icon: User, label: "Recipients", href: "/senders-recipients?tab=recipients", enabled: true, filledIcon: true },
   { icon: Users, label: "Senders", href: "/senders-recipients", enabled: true, filledIcon: true },
   { icon: IdCard, label: "Compliance", href: "/compliance", enabled: true },
   { icon: LifeBuoy, label: "Support", href: "/support", enabled: true },
@@ -60,6 +60,7 @@ export function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   const [location, setLocation] = useLocation();
+  const search = useSearch();
   const { data: unreadCountData } = useQuery<{ count: number } | null>({
     queryKey: ["/api/notifications/unread-count"],
     queryFn: getQueryFn<{ count: number }>({ on401: "returnNull" }),
@@ -102,12 +103,21 @@ export function Sidebar({
     const isReward = item.href === "/bonus-discounts";
     const isSupport = item.href === "/support";
     const isNotifications = item.href === "/notifications/archive";
-    const isActive =
-      location === item.href ||
-      (isOverview && location.startsWith("/overview")) ||
-      (!isOverview && location.startsWith(item.href)) ||
-      (isReward && location.startsWith("/rewards")) ||
-      (isSupport && (location.startsWith("/support") || location.startsWith("/my-tickets")));
+    const isRecipientsItem = item.label === "Recipients";
+    const isSendersItem = item.label === "Senders";
+    const activeTabParam = new URLSearchParams(search).get("tab");
+
+    const isActive = isRecipientsItem
+      ? location.startsWith("/beneficiaries") ||
+        (location === "/senders-recipients" && activeTabParam === "recipients")
+      : isSendersItem
+        ? location.startsWith("/senders/") ||
+          (location === "/senders-recipients" && activeTabParam !== "recipients")
+        : location === item.href ||
+          (isOverview && location.startsWith("/overview")) ||
+          (!isOverview && location.startsWith(item.href)) ||
+          (isReward && location.startsWith("/rewards")) ||
+          (isSupport && (location.startsWith("/support") || location.startsWith("/my-tickets")));
 
     const content = (
       <div

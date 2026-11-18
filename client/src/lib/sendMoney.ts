@@ -54,6 +54,16 @@ export interface CreateSendMoneyInput {
   providerId?: string;
   providerCode?: string;
   affiliateRateId?: string;
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  isInternational?: boolean;
+  dob?: string;
+  gender?: string;
+  addressLine2?: string;
+  otherRelationship?: string;
+  bankCode?: string;
+  clabe?: string;
+  cnaps?: string;
+  accountHolderName?: string;
 }
 
 export interface MitoBeneficiaryRequirementField {
@@ -65,6 +75,8 @@ export interface MitoBeneficiaryRequirementField {
   columnDataType: string;
   isRequired: boolean;
   isDisplayable: boolean;
+  /** Which journey step the field belongs to: Step 2 (Personal / Identification) or Step 3 (Banking). */
+  section?: "Personal" | "Identification" | "Banking";
   fieldInformation?: string | null;
   dropdownOptions?: Array<{ name: string; id: string }>;
 }
@@ -105,6 +117,16 @@ export interface MitoBeneficiaryItem {
   reasonDescription?: string | null;
   otherReason?: string | null;
   narration?: string | null;
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  addressLine2?: string | null;
+  otherRelation?: string | null;
+  dob?: string | null;
+  gender?: string | null;
+  bankCode?: string | null;
+  clabe?: string | null;
+  cnaps?: string | null;
+  isInternational?: boolean | null;
+  accountHolderName?: string | null;
   createdAt: string | null;
 }
 
@@ -331,6 +353,7 @@ export async function fetchMitoBeneficiaryRequirements(params: {
   entityType: "I" | "B";
   providerId?: string;
   service?: SendMoneyService;
+  isInternational?: boolean;
 }): Promise<MitoBeneficiaryRequirementField[]> {
   try {
     const qs = new URLSearchParams({
@@ -340,6 +363,7 @@ export async function fetchMitoBeneficiaryRequirements(params: {
     });
     if (params.countryIso3) qs.set("countryIso3", params.countryIso3.toUpperCase());
     if (params.providerId) qs.set("providerId", params.providerId);
+    if (params.isInternational !== undefined) qs.set("isInternational", params.isInternational ? "true" : "false");
 
     const res = await fetch(`/api/send-money/mito/beneficiary-requirements?${qs.toString()}`, {
       credentials: "include",
@@ -368,6 +392,8 @@ export interface MitoProviderOption {
   providerName: string;
   providerId: string;
   isGeneric: boolean;
+  /** `true` for Swift / international options; `false` for local (direct-to-bank) providers. */
+  isInternational?: boolean;
 }
 
 export interface MitoLookupTypeOption {
@@ -444,19 +470,27 @@ export async function fetchMitoAffiliateRate(
   }
 }
 
-export async function fetchMitoProviders(
-  paramsOrCurrency:
-    | string
-    | {
-        countryIso3: string;
-        currencyCode?: string;
-        serviceCode?: string;
-        collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
-        service?: SendMoneyService;
-      },
+export interface MitoProvidersDetailed {
+  configured: boolean;
+  providers: MitoProviderOption[];
+  local: MitoProviderOption[];
+  international: MitoProviderOption[];
+}
+
+type MitoProvidersQuery = {
+  countryIso3: string;
+  currencyCode?: string;
+  serviceCode?: string;
+  collectionMode?: "BANKACCOUNT" | "MOBILEMONEY";
+  service?: SendMoneyService;
+};
+
+async function requestMitoProviders(
+  paramsOrCurrency: string | MitoProvidersQuery,
   serviceArg?: SendMoneyService,
   countryIso3Arg?: string,
-): Promise<MitoProviderOption[]> {
+): Promise<MitoProvidersDetailed> {
+  const empty: MitoProvidersDetailed = { configured: false, providers: [], local: [], international: [] };
   try {
     const params =
       typeof paramsOrCurrency === "string"
@@ -486,9 +520,155 @@ export async function fetchMitoProviders(
     const res = await fetch(`/api/send-money/mito/providers?${qs.toString()}`, {
       credentials: "include",
     });
+    if (!res.ok) return empty;
+    const json = (await res.json()) as {
+      data?: {
+        configured?: boolean;
+        providers?: MitoProviderOption[];
+        local?: MitoProviderOption[];
+        international?: MitoProviderOption[];
+      };
+    };
+    const providers = json.data?.providers ?? [];
+    const international = json.data?.international ?? providers.filter((p) => p.isInternational === true);
+    const local = json.data?.local ?? providers.filter((p) => p.isInternational !== true);
+    return { configured: Boolean(json.data?.configured), providers, local, international };
+  } catch {
+    return empty;
+  }
+}
+
+/** Providers split into `local` (direct-to-bank) and `international` (Swift) options. */
+export async function fetchMitoProvidersDetailed(params: MitoProvidersQuery): Promise<MitoProvidersDetailed> {
+  return requestMitoProviders(params);
+}
+
+export async function fetchMitoProviders(
+  paramsOrCurrency: string | MitoProvidersQuery,
+  serviceArg?: SendMoneyService,
+  countryIso3Arg?: string,
+): Promise<MitoProviderOption[]> {
+  return (await requestMitoProviders(paramsOrCurrency, serviceArg, countryIso3Arg)).providers;
+}
+
+/** Creates a recipient (Mito, or locally when Mito is unavailable) via `POST /api/send-money/mito/beneficiaries`. */
+export async function createMitoBeneficiaryClient(
+  payload: Record<string, unknown>,
+): Promise<{ ok: boolean; beneficiaryId?: string; beneficiary?: MitoBeneficiaryItem; error?: string }> {
+  try {
+    const res = await fetch("/api/send-money/mito/beneficiaries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      data?: { beneficiaryId?: string | null; beneficiary?: MitoBeneficiaryItem };
+      error?: { message?: string };
+    };
+    if (!res.ok) {
+      return { ok: false, error: String(json?.error?.message || "We couldn't save this recipient. Please try again.") };
+    }
+    const beneficiaryId = json.data?.beneficiaryId ? String(json.data.beneficiaryId) : undefined;
+    const fullName = String(
+      payload.companyName || payload.businessName || `${payload.firstName || ""} ${payload.lastName || ""}`,
+    ).trim();
+    unmarkDeletedMitoBeneficiary({
+      beneficiaryId,
+      name: fullName,
+      accountNumber: String(payload.accountNumber || payload.acctNumber || payload.mobileNo || payload.iban || ""),
+    });
+    let beneficiary = json.data?.beneficiary;
+    if (!beneficiary && beneficiaryId) {
+      try {
+        const list = await fetchMitoBeneficiaries();
+        beneficiary = list.find((b) => String(b.beneficiaryId || "").toUpperCase() === beneficiaryId.toUpperCase());
+      } catch {
+        beneficiary = undefined;
+      }
+    }
+    return { ok: true, beneficiaryId, ...(beneficiary ? { beneficiary } : {}) };
+  } catch {
+    return { ok: false, error: "We couldn't reach the server. Please check your connection and try again." };
+  }
+}
+
+export interface MitoBankVerificationClientResult {
+  resolved: boolean;
+  canContinue: boolean;
+  source: "mito" | "unavailable" | "mock";
+  accountHolderName: string | null;
+  message: string | null;
+  details?: Record<string, string>;
+}
+
+const BANK_VERIFICATION_UNAVAILABLE: MitoBankVerificationClientResult = {
+  resolved: false,
+  canContinue: true,
+  source: "unavailable",
+  accountHolderName: null,
+  message:
+    "Automatic account name verification isn't available for this bank right now. Please double-check the account details and continue.",
+};
+
+/** "Search bank details" — `POST /api/send-money/mito/bank-details`. Never blocks: `canContinue` is always true. */
+export async function verifyMitoBankDetails(params: {
+  international?: boolean;
+  countryIso3: string;
+  providerId?: string;
+  param: Array<{ parameter: string; value: string }>;
+}): Promise<MitoBankVerificationClientResult> {
+  try {
+    const res = await fetch("/api/send-money/mito/bank-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) return { ...BANK_VERIFICATION_UNAVAILABLE };
+    const json = (await res.json()) as { data?: MitoBankVerificationClientResult };
+    return json.data ? { ...json.data, canContinue: true } : { ...BANK_VERIFICATION_UNAVAILABLE };
+  } catch {
+    return { ...BANK_VERIFICATION_UNAVAILABLE };
+  }
+}
+
+export interface MitoNicknameValidationResult {
+  valid: boolean;
+  available: boolean;
+  source: "local" | "mito";
+  message: string | null;
+}
+
+/** Live nickname check (min 5 letters/numbers + availability) via `GET /api/send-money/mito/validate-nickname`. */
+export async function validateMitoNickname(nickName: string): Promise<MitoNicknameValidationResult> {
+  try {
+    const res = await fetch(`/api/send-money/mito/validate-nickname?nickName=${encodeURIComponent(nickName)}`, {
+      credentials: "include",
+    });
+    if (!res.ok) return { valid: true, available: true, source: "local", message: null };
+    const json = (await res.json()) as { data?: MitoNicknameValidationResult };
+    return json.data ?? { valid: true, available: true, source: "local", message: null };
+  } catch {
+    return { valid: true, available: true, source: "local", message: null };
+  }
+}
+
+export interface MitoProvinceOption {
+  id: string;
+  name: string;
+  code?: string;
+}
+
+/** States / provinces for a country via `GET /api/send-money/mito/provinces`. */
+export async function fetchMitoProvinces(countryIso3: string): Promise<MitoProvinceOption[]> {
+  try {
+    const res = await fetch(`/api/send-money/mito/provinces?countryIso3=${encodeURIComponent(countryIso3.trim().toUpperCase())}`, {
+      credentials: "include",
+    });
     if (!res.ok) return [];
-    const json = (await res.json()) as { data?: { providers?: MitoProviderOption[] } };
-    return json.data?.providers ?? [];
+    const json = (await res.json()) as { data?: { provinces?: MitoProvinceOption[] } };
+    return json.data?.provinces ?? [];
   } catch {
     return [];
   }

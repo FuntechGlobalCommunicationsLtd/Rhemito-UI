@@ -17,6 +17,9 @@ import SentInvoiceDetails from "@/pages/SentInvoiceDetails";
 import InvoiceView from "@/pages/InvoiceView";
 import SenderDetail from "@/pages/SenderDetail";
 import SendersRecipients from "@/pages/SendersRecipients";
+import AddBeneficiaryPage from "@/pages/Beneficiaries/AddBeneficiaryPage";
+import BeneficiaryDetailPage from "@/pages/Beneficiaries/BeneficiaryDetailPage";
+import EditBeneficiaryPage from "@/pages/Beneficiaries/EditBeneficiaryPage";
 import PayoutAccounts from "@/pages/PayoutAccounts";
 import SendMoney from "@/pages/SendMoney";
 import BonusAndDiscounts from "@/pages/BonusAndDiscounts";
@@ -96,9 +99,15 @@ function Router() {
       <Route path="/send/status" component={SendMoney} />
       <Route path="/send/statuspaybybank" component={SendMoney} />
       {/* Senders and Recipients were consolidated into one page; the sender
-          detail view keeps its own route. */}
+          and beneficiary detail/add/edit views keep their own routes. */}
       <Route path="/senders-recipients" component={SendersRecipients} />
       <Route path="/senders/:email" component={SenderDetail} />
+      <Route path="/beneficiaries/add" component={AddBeneficiaryPage} />
+      <Route path="/beneficiaries/add-beneficiaries" component={AddBeneficiaryPage} />
+      <Route path="/beneficiaries/edit-beneficiary/:id" component={EditBeneficiaryPage} />
+      <Route path="/beneficiaries/:id/edit" component={EditBeneficiaryPage} />
+      <Route path="/beneficiaries/:id" component={BeneficiaryDetailPage} />
+      <Route path="/beneficiaries-details/:id" component={BeneficiaryDetailPage} />
       <Route path="/payout-accounts" component={PayoutAccounts} />
       <Route path="/pay/e/:id" component={RequestCheckout} />
       <Route path="/pay/:id" component={RequestCheckout} />

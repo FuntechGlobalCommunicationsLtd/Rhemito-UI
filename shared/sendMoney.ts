@@ -98,6 +98,16 @@ export interface SendMoneyTransaction {
   city?: string | null;
   postcode?: string | null;
   stateOrProvince?: string | null;
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  isInternational?: boolean | null;
+  dob?: string | null;
+  gender?: string | null;
+  addressLine2?: string | null;
+  otherRelationship?: string | null;
+  bankCode?: string | null;
+  clabe?: string | null;
+  cnaps?: string | null;
+  accountHolderName?: string | null;
   status: SendMoneyStatus;
   createdAt: Date;
   paidAt: Date | null;
@@ -152,6 +162,16 @@ export const createSendMoneyTransactionSchema = z.object({
   providerId: z.string().trim().max(80).optional(),
   providerCode: z.string().trim().max(40).optional(),
   affiliateRateId: z.string().trim().max(80).optional(),
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  isInternational: z.boolean().optional(),
+  dob: z.string().trim().max(20).optional(),
+  gender: z.string().trim().max(20).optional(),
+  addressLine2: z.string().trim().max(180).optional(),
+  otherRelationship: z.string().trim().max(160).optional(),
+  bankCode: z.string().trim().max(30).optional(),
+  clabe: z.string().trim().max(30).optional(),
+  cnaps: z.string().trim().max(30).optional(),
+  accountHolderName: z.string().trim().max(120).optional(),
 });
 
 export const paySendMoneyTransactionSchema = z.object({
@@ -240,6 +260,16 @@ export interface SendMoneyTransactionView {
   city?: string | null;
   postcode?: string | null;
   stateOrProvince?: string | null;
+  /** Beneficiary-journey parity (DEC-2026-11-19) - additive, optional. */
+  isInternational?: boolean | null;
+  dob?: string | null;
+  gender?: string | null;
+  addressLine2?: string | null;
+  otherRelationship?: string | null;
+  bankCode?: string | null;
+  clabe?: string | null;
+  cnaps?: string | null;
+  accountHolderName?: string | null;
   status: SendMoneyStatus;
   createdAt: string;
   paidAt: string | null;

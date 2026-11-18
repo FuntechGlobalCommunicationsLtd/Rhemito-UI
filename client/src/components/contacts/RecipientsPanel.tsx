@@ -47,6 +47,7 @@ import { toKnownRecipient } from "@/data/contacts";
 import { type KnownRecipient } from "@/data/recipients";
 import { deleteMitoBeneficiaryById, fetchMitoBeneficiaries, fetchMitoBeneficiariesWithMeta, fetchMitoProviders, isMitoBeneficiaryDeleted, unmarkDeletedMitoBeneficiary, updateMitoBeneficiaryById, type MitoBeneficiaryItem, type MitoProviderOption } from "@/lib/sendMoney";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { displayBeneficiaryEmail, isSyntheticBeneficiaryEmail } from "@/components/beneficiary";
 import {
   SERVICE_TYPES,
   bankFieldsFor,
@@ -246,10 +247,13 @@ export function RecipientsPanel() {
           : b.bicSwift && !b.sortCode && normalizedCountry !== "Nigeria" && normalizedCountry !== "United Kingdom"
             ? "SWIFT"
             : "Bank Deposit";
+      const matchedLoc = localList.find(
+        (loc) => loc.id.toLowerCase() === b.beneficiaryId.toLowerCase(),
+      );
       return {
         id: b.beneficiaryId,
-        email: `${b.beneficiaryId.toLowerCase()}@beneficiary.rhemito.local`,
-        isSender: false,
+        email: matchedLoc?.email || `${b.beneficiaryId.toLowerCase()}@beneficiary.rhemito.local`,
+        isSender: Boolean(matchedLoc?.isSender),
         recipientType: b.legalEntityType,
         firstName: b.firstName || b.name.split(" ")[0] || "",
         lastName: b.lastName || b.name.split(" ").slice(1).join(" ") || "",
@@ -257,14 +261,14 @@ export function RecipientsPanel() {
         country: normalizedCountry,
         currency: (b.currency || currencyForCountry(normalizedCountry)).toUpperCase(),
         bankName: b.bankName && b.bankName !== "Bank" ? b.bankName : "Bank Transfer",
-        accountNumber: b.acctNumber || b.iban || "—",
+        accountNumber: b.acctNumber || b.iban || b.mobileNo || "—",
         sortCode: b.sortCode || "",
         iban: b.iban || "",
         swift: b.bicSwift || "",
         serviceType,
-        uniqueCode: makeCodeFromId(b.beneficiaryId),
-        narration: "",
-        relationship: "Personal",
+        uniqueCode: matchedLoc?.uniqueCode || makeCodeFromId(b.beneficiaryId),
+        narration: b.narration || matchedLoc?.narration || "",
+        relationship: b.relationship || matchedLoc?.relationship || "Personal",
         createdAt: b.createdAt ? b.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
       };
     });
@@ -695,18 +699,12 @@ export function RecipientsPanel() {
             </p>
           </div>
           <Button
-            onClick={() => {
-              setEditingRecipient(null);
-              setNewRecipient(emptyNewRecipient);
-              setSelectedProvider(null);
-              setAddRecipientError(null);
-              setShowAddModal(true);
-            }}
+            onClick={() => setLocation("/beneficiaries/add")}
             className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
             data-testid="button-add-recipient"
           >
             <Plus className="w-4 h-4" />
-            Add Recipient
+            Add recipient
           </Button>
         </div>
 
@@ -738,6 +736,17 @@ export function RecipientsPanel() {
                       <p className="text-xs text-muted-foreground/70 mt-1">
                         Try a different name or country, or add a new recipient.
                       </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLocation("/beneficiaries/add")}
+                        className="mt-4 gap-1.5"
+                        data-testid="button-empty-add-recipient"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add recipient
+                      </Button>
                     </div>
                   ) : (
                     pagination.rows.map((recipient) => {
@@ -791,6 +800,9 @@ export function RecipientsPanel() {
                                     {recipient.accountNumber}
                                   </div>
                                 )}
+                                <div className="mt-0.5 text-xs text-slate-400 truncate">
+                                  Email: {displayBeneficiaryEmail(recipient.email)}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -798,23 +810,27 @@ export function RecipientsPanel() {
                           <div className="pt-2.5 border-t border-slate-100 flex items-center gap-2 justify-end flex-wrap">
                             <Button
                               size="sm"
-                              onClick={() => setLocation("/send-money")}
+                              onClick={() =>
+                                setLocation(
+                                  `/send-money?currency=${encodeURIComponent(recipient.currency)}&recipientId=${encodeURIComponent(recipient.id)}`,
+                                )
+                              }
                               className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white h-8 px-3 text-xs font-medium rounded-lg shadow-sm active:scale-95 transition-all"
                               data-testid={`button-send-${recipient.id}`}
                               aria-label={`Send money to ${name}`}
                             >
                               <Send className="w-3.5 h-3.5 mr-1" />
-                              Send Money
+                              Send money
                             </Button>
 
-                            {recipient.isSender && (
+                            {recipient.isSender && !isSyntheticBeneficiaryEmail(recipient.email) && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setLocation(`/senders/${encodeURIComponent(recipient.email || "")}`)}
                                 className="h-8 px-2.5 text-xs text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 active:scale-95"
                                 data-testid={`button-view-sender-dual-${recipient.id}`}
-                                aria-label={`View Sender profile for ${name}`}
+                                aria-label={`View sender profile for ${name}`}
                               >
                                 <User className="w-3.5 h-3.5 mr-1" />
                                 Sender
@@ -824,7 +840,9 @@ export function RecipientsPanel() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setViewingRecipient(recipient)}
+                              onClick={() =>
+                                setLocation(`/beneficiaries/${encodeURIComponent(recipient.id)}`)
+                              }
                               className="h-8 px-2.5 text-xs active:scale-95"
                               data-testid={`button-view-${recipient.id}`}
                               aria-label={`View ${name}`}
@@ -836,7 +854,11 @@ export function RecipientsPanel() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleOpenEditRecipient(recipient)}
+                              onClick={() =>
+                                setLocation(
+                                  `/beneficiaries/${encodeURIComponent(recipient.id)}/edit`,
+                                )
+                              }
                               className="h-8 px-2.5 text-xs active:scale-95"
                               data-testid={`button-edit-${recipient.id}`}
                               aria-label={`Edit ${name}`}
@@ -925,6 +947,9 @@ export function RecipientsPanel() {
                                 {recipient.bankName && (
                                   <span className="text-xs text-muted-foreground truncate">
                                     {recipient.bankName}
+                                    {displayBeneficiaryEmail(recipient.email) !== "—"
+                                      ? ` · ${displayBeneficiaryEmail(recipient.email)}`
+                                      : ""}
                                   </span>
                                 )}
                               </div>
@@ -957,26 +982,30 @@ export function RecipientsPanel() {
                           </TableCell>
                           <TableCell className="py-4 px-4">
                             <div className="flex items-center justify-end gap-2">
-                              {recipient.isSender && (
+                              {recipient.isSender && !isSyntheticBeneficiaryEmail(recipient.email) && (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <button
                                       onClick={() => setLocation(`/senders/${encodeURIComponent(recipient.email || "")}`)}
                                       className="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 flex items-center justify-center transition-colors text-indigo-600"
-                                      aria-label={`View Sender profile for ${name}`}
+                                      aria-label={`View sender profile for ${name}`}
                                       data-testid={`button-view-sender-dual-${recipient.id}`}
                                     >
                                       <User className="w-4 h-4" aria-hidden="true" />
                                     </button>
                                   </TooltipTrigger>
-                                  <TooltipContent>Sender Profile</TooltipContent>
+                                  <TooltipContent>Sender profile</TooltipContent>
                                 </Tooltip>
                               )}
 
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => setLocation("/send-money")}
+                                    onClick={() =>
+                                      setLocation(
+                                        `/send-money?currency=${encodeURIComponent(recipient.currency)}&recipientId=${encodeURIComponent(recipient.id)}`,
+                                      )
+                                    }
                                     className="w-8 h-8 rounded-lg bg-primary/10 hover:bg-primary/20 flex items-center justify-center transition-colors"
                                     aria-label={`Send money to ${name}`}
                                     data-testid={`button-send-${recipient.id}`}
@@ -984,13 +1013,15 @@ export function RecipientsPanel() {
                                     <Send className="w-4 h-4 text-primary" aria-hidden="true" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>Send Money</TooltipContent>
+                                <TooltipContent>Send money</TooltipContent>
                               </Tooltip>
 
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => setViewingRecipient(recipient)}
+                                    onClick={() =>
+                                      setLocation(`/beneficiaries/${encodeURIComponent(recipient.id)}`)
+                                    }
                                     className="w-8 h-8 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center transition-colors"
                                     aria-label={`View ${name}`}
                                     data-testid={`button-view-${recipient.id}`}
@@ -998,13 +1029,17 @@ export function RecipientsPanel() {
                                     <Eye className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>View Recipient</TooltipContent>
+                                <TooltipContent>View recipient</TooltipContent>
                               </Tooltip>
 
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => handleOpenEditRecipient(recipient)}
+                                    onClick={() =>
+                                      setLocation(
+                                        `/beneficiaries/${encodeURIComponent(recipient.id)}/edit`,
+                                      )
+                                    }
                                     className="w-8 h-8 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center transition-colors"
                                     aria-label={`Edit ${name}`}
                                     data-testid={`button-edit-${recipient.id}`}
@@ -1012,7 +1047,7 @@ export function RecipientsPanel() {
                                     <Pencil className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>Edit Recipient</TooltipContent>
+                                <TooltipContent>Edit recipient</TooltipContent>
                               </Tooltip>
 
                               <Tooltip>
@@ -1026,7 +1061,7 @@ export function RecipientsPanel() {
                                     <Trash2 className="w-4 h-4 text-red-500" aria-hidden="true" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>Delete Recipient</TooltipContent>
+                                <TooltipContent>Delete recipient</TooltipContent>
                               </Tooltip>
                             </div>
                           </TableCell>
@@ -1043,6 +1078,17 @@ export function RecipientsPanel() {
                             <p className="text-xs text-muted-foreground/70 mt-1">
                               Try a different name or country, or add a new recipient.
                             </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLocation("/beneficiaries/add")}
+                              className="mt-4 gap-1.5"
+                              data-testid="button-empty-add-recipient"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add recipient
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1701,7 +1747,16 @@ export function RecipientsPanel() {
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-sm"
             >
               <Card>
-                <CardContent className="p-6 text-center">
+                <CardContent className="p-6 text-center relative">
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    data-testid="button-close-delete-recipient"
+                    onClick={() => setDeletingRecipient(null)}
+                    className="absolute right-4 top-4 w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
+                  </button>
                   <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Trash2 className="w-6 h-6 text-red-600" aria-hidden="true" />
                   </div>
