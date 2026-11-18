@@ -391,7 +391,7 @@ export function SendersPanel() {
                               </span>
                             </div>
                           </td>
-                          <td className="py-4 px-4 text-muted-foreground">Collection</td>
+                          <td className="py-4 px-4 text-muted-foreground">{sender.serviceType || "Bank deposit"}</td>
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-2">
                               {sender.isRecipient && (

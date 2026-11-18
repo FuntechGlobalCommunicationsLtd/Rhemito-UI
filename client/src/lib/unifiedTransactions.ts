@@ -67,9 +67,9 @@ export const TYPE_BADGES: Record<TransactionType, { label: string; dot: string }
 // Traffic-light scheme (RM-02): green = completed (only a confirmed payout),
 // amber = in progress / awaiting, red = failed, cancelled or expired. The text
 // label always stays visible so meaning never depends on colour alone.
-const TL_GREEN = { pill: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" };
-const TL_AMBER = { pill: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" };
-const TL_RED = { pill: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" };
+const TL_GREEN = { pill: "bg-transparent text-[#019B3E] border-transparent", dot: "bg-[#019B3E]" };
+const TL_AMBER = { pill: "bg-transparent text-[#A79032] border-transparent", dot: "bg-[#A79032]" };
+const TL_RED = { pill: "bg-transparent text-[#850707] border-transparent", dot: "bg-[#850707]" };
 
 const REQUEST_STATUS: Record<string, { label: string; pill: string; dot: string }> = {
   active: { label: "Sent", ...TL_AMBER },

@@ -155,7 +155,7 @@ export default function SenderDetail() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Service Type</p>
-                    <p className="font-medium">{sender.serviceType || "Collection"}</p>
+                    <p className="font-medium">{sender.serviceType || "Bank deposit"}</p>
                   </div>
                 </div>
               </div>

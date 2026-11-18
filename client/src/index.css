@@ -285,10 +285,11 @@
   box-shadow: none !important;
 }
 .status-light > span:first-child {
-  width: 0.875rem;
-  height: 0.875rem;
+  width: 8px;
+  height: 8px;
   border-radius: 9999px;
-  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent);
+  box-shadow: none;
+  animation: none;
 }
 .status-light[title]:hover::after,
 .status-light[title]:focus::after,

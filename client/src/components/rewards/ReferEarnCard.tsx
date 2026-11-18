@@ -174,6 +174,55 @@ export function ReferEarnCard({
         highlighted && "rounded-2xl ring-2 ring-primary ring-offset-2",
       )}
     >
+      {collapsed ? (
+        <div
+          className="rounded-xl border border-[#efefee] bg-white px-4 py-3 flex items-center justify-between gap-3"
+          data-testid="refer-latest"
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+            <p className="font-display text-sm font-bold text-[#323130]">
+              Invite and get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
+            </p>
+            <div className="flex flex-wrap items-center gap-4" data-testid="refer-stats">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Friends joined</span>
+                <span className="font-display text-base font-bold text-[#323130]" data-testid="refer-count">{joined}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-teal-800">Bonus earned</span>
+                <span className="font-display text-base font-bold text-teal-700" data-testid="refer-earned">{earnedText}</span>
+              </div>
+              {joined > 0 ? (
+                <Link
+                  href={
+                    activeOffer.currency && offer.currency && activeOffer.currency !== offer.currency
+                      ? `/bonus-discounts?tab=referrals&currency=${encodeURIComponent(activeOffer.currency)}`
+                      : "/bonus-discounts?tab=referrals"
+                  }
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline"
+                >
+                  View all referrals
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              ) : (
+                <span className="text-xs text-slate-500">No referrals yet. Share your link to start earning.</span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            aria-expanded={false}
+            aria-label="Expand referral offer"
+            data-testid="toggle-refer-earn-card"
+            title="Show the full offer"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white text-[#2e5bff] hover:bg-blue-50 cursor-pointer"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+      <>
       {/* Main Split Banner matching Figma 12498:26136 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
         {/* Left Blue Invite Card */}
@@ -235,18 +284,17 @@ export function ReferEarnCard({
                   <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
-              {defaultCollapsed && (
-                <button
-                  type="button"
-                  onClick={() => setCollapsed((v) => !v)}
-                  aria-expanded={!collapsed}
-                  data-testid="toggle-refer-earn-card"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white hover:bg-blue-50 px-3 py-1 text-xs font-semibold text-[#2e5bff] transition-colors cursor-pointer"
-                >
-                  <span>{collapsed ? "Show Refer & earn" : "Hide"}</span>
-                  {collapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                aria-expanded={true}
+                aria-label="Collapse referral offer"
+                data-testid="toggle-refer-earn-card"
+                title="Show the summary"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-white text-[#2e5bff] hover:bg-blue-50 cursor-pointer"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
@@ -413,6 +461,8 @@ export function ReferEarnCard({
             </>
           )}
         </div>
+      )}
+      </>
       )}
 
       <Dialog open={howOpen} onOpenChange={setHowOpen}>

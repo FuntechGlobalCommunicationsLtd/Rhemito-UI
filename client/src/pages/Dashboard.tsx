@@ -648,28 +648,28 @@ function MobileSendMoneyCard({
             {tx.amount}
           </span>
           {scheduled ? (
-            <span title="Scheduled" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span title="Scheduled" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-transparent text-[#A79032] border-transparent">
+              <span className="w-2 h-2 rounded-full bg-[#A79032]" />
               Scheduled
             </span>
           ) : tx.status === "cancelled" ? (
-            <span title="Cancelled" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 text-red-700 border border-red-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+            <span title="Cancelled" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-transparent text-[#850707] border-transparent">
+              <span className="w-2 h-2 rounded-full bg-[#850707]" />
               Cancelled
             </span>
           ) : tx.status === "completed" ? (
-            <span title="Completed" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span title="Completed" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-transparent text-[#019B3E] border-transparent">
+              <span className="w-2 h-2 rounded-full bg-[#019B3E]" />
               Completed
             </span>
           ) : tx.status === "awaiting_payment" ? (
-            <span title="Awaiting Payment" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span title="Awaiting Payment" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-transparent text-[#FF7013] border-transparent">
+              <span className="w-2 h-2 rounded-full bg-[#FF7013]" />
               Awaiting Payment
             </span>
           ) : (
-            <span title="Pending" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span title="Pending" className="status-light inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-transparent text-[#A79032] border-transparent">
+              <span className="w-2 h-2 rounded-full bg-[#A79032]" />
               Pending
             </span>
           )}

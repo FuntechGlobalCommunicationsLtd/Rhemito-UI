@@ -1352,7 +1352,7 @@ export default function RequestPayment() {
                             </span>
                           </div>
                           <div className="flex justify-between gap-4 pt-2">
-                            <span className="text-gray-600">Connection Method</span>
+                            <span className="text-gray-600">Collection Method</span>
                             <span className="font-medium text-gray-900 text-right">Bank deposit</span>
                           </div>
 
@@ -1804,7 +1804,7 @@ export default function RequestPayment() {
                             </span>
                           </div>
                           <div className="flex justify-between gap-4 pt-2">
-                            <span className="text-gray-600">Connection Method</span>
+                            <span className="text-gray-600">Collection Method</span>
                             <span className="font-medium text-gray-900 text-right">Bank deposit</span>
                           </div>
 

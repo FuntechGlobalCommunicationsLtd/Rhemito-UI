@@ -131,7 +131,7 @@ export default function CollectionAccount() {
           className="text-xl md:text-[22px] font-normal text-[#323130] tracking-tight"
           data-testid="heading-collection-account"
         >
-          Collection account
+          Payment account
         </h1>
 
         <button

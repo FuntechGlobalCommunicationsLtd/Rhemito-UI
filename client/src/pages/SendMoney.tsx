@@ -3465,7 +3465,7 @@ export default function SendMoney() {
                                                     <span className="font-medium text-gray-900 whitespace-nowrap">{sendSymbol}1 = {receiveSymbol}{EXCHANGE_RATE.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between pt-2">
-                                                    <span className="text-gray-600">Connection Method</span>
+                                                    <span className="text-gray-600">Collection Method</span>
                                                     <span className="font-medium text-right capitalize">{deliveryMethod.replace('_', ' ')}</span>
                                                 </div>
 
@@ -3816,7 +3816,7 @@ export default function SendMoney() {
                                                     <span className="font-medium text-gray-900 whitespace-nowrap">{sendSymbol}1 = {receiveSymbol}{EXCHANGE_RATE.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between pt-2">
-                                                    <span className="text-gray-600">Connection Method</span>
+                                                    <span className="text-gray-600">Collection Method</span>
                                                     <span className="font-medium text-right capitalize">{deliveryMethod.replace('_', ' ')}</span>
                                                 </div>
 
@@ -4633,7 +4633,7 @@ export default function SendMoney() {
                                                     <span className="font-medium text-gray-900 whitespace-nowrap">{sendSymbol}1 = {receiveSymbol}{EXCHANGE_RATE.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between pt-2">
-                                                    <span className="text-gray-600">Connection Method</span>
+                                                    <span className="text-gray-600">Collection Method</span>
                                                     <span className="font-medium text-right capitalize">{deliveryMethod.replace('_', ' ')}</span>
                                                 </div>
 
@@ -5935,7 +5935,7 @@ export default function SendMoney() {
                                                     <span className="font-medium whitespace-nowrap">{sendSymbol}1 = {receiveSymbol}{EXCHANGE_RATE.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex justify-between pt-2">
-                                                    <span className="text-gray-600">Connection Method</span>
+                                                    <span className="text-gray-600">Collection Method</span>
                                                     <span className="font-medium text-right capitalize">
                                                         {deliveryMethod.replace('_', ' ')}
                                                     </span>
