@@ -12,6 +12,7 @@ import { ReferralInviteStrip } from "@/components/rewards/ReferralSignup";
 import { ExistingUserReferralCard } from "@/components/rewards/ExistingUserReferralCard";
 import { useToast } from "@/hooks/use-toast";
 import { clearReferral, detectClientDevice, loadReferral, saveReferral, type StoredReferral } from "@/lib/rewards";
+import { getSafePostAuthRedirect } from "@/lib/support";
 
 type AuthStep = "email" | "signIn" | "signUp" | "businessStep2" | "otp" | "forgotPassword";
 
@@ -151,8 +152,8 @@ export default function SignInSignUp() {
   };
 
   const handleForgotComplete = () => {
-    // reset-password signs the user in automatically — go straight home.
-    setLocation("/");
+    // reset-password signs the user in automatically — honor safe ?redirect= or go home.
+    setLocation(getSafePostAuthRedirect(search));
   };
 
   return (

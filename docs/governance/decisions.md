@@ -231,3 +231,101 @@
      - Preserved `<SendMoneyReceiptDialog>` non-regressively (`Option 1`): paid Send Money desktop rows display the centered `w-[88px]` `Resend` pill (`#2e5bff`) + floating `MoreVertical` (`⋮`, `button-actions-more-${tx.id}`) containing `View receipt` (`button-receipt-${tx.id}`), matching the `[View] + ⋮` pattern on `Receive money` and `Invoices`; mobile cards retain paired `[Receipt]` + `[Resend]` pills.
      - Aligned empty state (`Reset filters`), loading `<Skeleton>` rows/cards, `enabled: !isAuthLoading` query gating, `scheduledTransactions` UTC date sort, `transactions-pagination` footer (`Showing X–Y of Z transactions • Page P of T` + `button-prev-page` / `button-next-page`), and regulatory footer note with `Dashboard.tsx`.
   3. **Superseded Behaviour:** Earlier `/transactions` column order (`Ref no. → Recipient / sender → Service → Date → Amount`), desktop email/type-badge sublines, ISO-code `Amount` + `subNote`, `MoreHorizontal` overflow icon, Title-Case filter chips, and side-by-side desktop `[Receipt] [Resend]` buttons superseded by the unified Overview table layout.
+
+---
+
+### `DEC-2026-11-18-SUPPORT-MODULE` — 5-Screen Support Module (`/support`, `/support/faq`, `/support/my-tickets`, `/support/create-ticket`, `/my-tickets/request-details/:id`) & Sidebar Unread Support Badge (`Direction A`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `Direction A` + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Backend: `shared/support.ts`, `shared/schema.ts`, `server/supportService.ts`, `server/supportRoutes.ts`, `server/notificationService.ts`, `server/routes.ts`
+  - Frontend: `client/src/App.tsx`, `client/src/components/layout/Sidebar.tsx`, `client/src/contexts/NotificationContext.tsx`, `client/src/components/notifications/NotificationItem.tsx`, `client/src/pages/NotificationDetail.tsx`, `client/src/pages/Auth/{SignInSignUp,Login}.tsx`, `client/src/pages/Auth/components/{SignInStep,OtpStep}.tsx`, `client/src/lib/support.ts`, `client/src/components/support/{SupportAttachmentUpload,SupportSignInRequiredCard}.tsx`, `client/src/pages/Support/{SupportHub,SupportFaq,MyTickets,CreateTicket,TicketRequestDetails}.tsx`
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/support.spec.js`
+- **Summary:**
+  1. **5-Screen Layout & Flows (`Direction A` — Staging Fidelity + `PD-04` Sentence Case):**
+     - **`/support` (`SupportHub.tsx`):** Full-width `DashboardLayout` hub with `Support` heading and stacked `FAQs` (`/support/faq`) and `My tickets` (`/support/my-tickets`) navigation cards (`#F9F9FA` surface, hover light-blue, right chevron).
+     - **`/support/faq` (`SupportFaq.tsx`):** `<` Back button + `FAQs` heading + retail-scoped categorized single-toggle `+`/`−` accordions (`GET /api/v1/Account/Faqs`, rewriting internal `FURP` mentions to `mito.money`).
+     - **`/support/my-tickets` (`MyTickets.tsx`):** `<` Back button, `My tickets` heading, `+ Create new ticket` primary CTA (`/support/create-ticket`), right-aligned debounced `Search tickets…` input with `×` clear button, 5 status pill tabs (`New`, `Awaiting admin`, `Awaiting client`, `Resolved`, `All` — smart-defaulting to `New` when `New > 0` else `All`), desktop table + mobile card stack (`Ticket #`, `Subject`, `Date`, `Status` badges: `New` `#1A73E8`, `Awaiting admin` `#F9AB00`, `Awaiting client` `#7B61FF`, `Resolved` `#1E8E3E`), empty state, and pagination.
+     - **`/support/create-ticket` (`CreateTicket.tsx` + `/support/TicketForm` alias):** `<` Back button, `New ticket` heading, `Need help regarding` subheading, and 3 expandable issue accordions (`Failed transaction`, `Recipients`, `KYC and compliance`), each rendering an inline form with mandatory fields on top (`Transaction reference*` for Failed transaction, `Subject*`, `Message*`) above optional single-file `Attachment` dropzone (`PNG, JPG, PDF — max 2MB`) and `Submit request` button + toast feedback.
+     - **`/my-tickets/request-details/:id` (`TicketRequestDetails.tsx`):** `<` Back button, `#<referenceNumber> <summary>`, date, status, `"Reply to this ticket to open it"` helper when resolved/closed, collapsible `Reply` composer (`Description*`, `Attachment`, `Cancel request` / `Submit request`), and conversation thread cards (`BackOffice User` on `#F8F8F8`, customer derived dynamically from active user per `REF-18`, image lightbox modal, PDF preview, and download).
+  2. **Sidebar & Notification Integration (`Sidebar.tsx`, `notificationService.ts`):**
+     - Retains `LifeBuoy` icon on `Support` (`DEC-2026-11-17-DASHBOARD-SUMMARY-AND-SIDEBAR-THEME`), highlights `Support` across both `/support*` and `/my-tickets*`, and renders `sidebar-support-badge` (blue filled bell + red count pill) when unread `support_ticket_*` notifications exist, automatically marking matching ticket notifications read when `/my-tickets/request-details/:id` is viewed.
+  3. **Protected Existing Modules (`AGENTS.md` §1, §6):** `Settings.tsx` (`Request profile change`) and `SampleTicket.tsx` (`/sample-ticket`) remain untouched.
+
+---
+
+### `DEC-2026-11-18-MITOVIEW-AND-REAL-FURP-APIS` — MitoView Module (`/mitoview`, `/mitoview/:slug`, `/mitoview/unsubscribe`, `/blog`) & Live `furp02-staging` Real-API Integration for Support & MitoView (`Direction A` + Customer Auth Bridge)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `MitoView Direction A + Real FURP Customer Auth Bridge` + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Assets: `shared/mitoView.ts`, `shared/support.ts`, `client/public/mitoview/july/{unified-payments,onepipe,support,rhemi}.jpg`
+  - Backend: `server/furpClient.ts`, `server/auth.ts` (additive FURP `Auth/check-email` & `Auth/login` customer token bridge), `server/supportRoutes.ts` (live `furp02-staging` proxy + `FURP_LIVE=0`/`FURP_BASE_URL=''`/`VITEST` offline fallback), `server/mitoViewRoutes.ts` (live `furp02-staging` `MitoView/*` proxy + offline fallback), `server/routes.ts`
+  - Frontend: `client/src/lib/mitoView.ts`, `client/src/lib/support.ts`, `client/src/pages/MitoView/{MitoViewShell,MitoViewHome,MitoViewArticle,MitoViewUnsubscribe}.tsx`, `client/src/pages/Support/{MyTickets,CreateTicket,TicketRequestDetails}.tsx`, `client/src/components/layout/Sidebar.tsx`, `client/src/App.tsx`
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/mitoview.spec.js`
+- **Summary:**
+  1. **Live `furp02-staging.funtechcom.com` Real-API Integration (Superseding Local-Only Prototype Store in `DEC-2026-11-18-SUPPORT-MODULE`):**
+     - **MitoView (`server/mitoViewRoutes.ts`):** Proxies `GET /api/v1/MitoView/posts`, `GET /api/v1/MitoView/posts/:slug`, `POST /api/v1/MitoView/subscribe`, `POST /api/v1/MitoView/unsubscribe`, and `POST /api/v1/MitoView/unsubscribe/confirm` directly to `furp02-staging.funtechcom.com` keeping `apiKey` strictly server-side (5-minute GET cache; local fixture fallback only when `VITEST` or `FURP_LIVE=0`).
+     - **Support & FURP Customer Auth Bridge (`server/auth.ts`, `server/furpClient.ts`, `server/supportRoutes.ts`):** `POST /api/auth/check-email` and `POST /api/auth/login` bridge real `furp02-staging` customer accounts (`/api/v1/Auth/check-email` & `/api/v1/Auth/login`), syncing the customer into local `authUsers` and storing their FURP customer JWT (`furpAccessToken`, cleared on logout) while leaving local/Playwright test accounts unbroken. `GET /api/v1/Account/Faqs` fetches live FAQs from `furp02-staging` (via customer JWT or `getMitoRetailToken()`), and `Support/*` + `Account/GetNotifications?unreadOnly=true` + `Account/MarkNotificationRead` proxy per-customer tickets directly to `furp02-staging` using the signed-in customer's FURP JWT (showing a clean `Sign in` prompt when no customer FURP JWT is active, never leaking a shared partner account's tickets).
+  2. **MitoView 3-Screen UX (`Direction A` — Tailwind CSS Only, `PD-04` Sentence Case):**
+     - **`/mitoview` (`MitoViewHome.tsx`):** Adaptive signed-in (`DashboardLayout`, omitting Staging's duplicate marketing `HomeFooter` while keeping `Sidebar` `MitoView` active) and signed-out public shell; pill search bar (`?q=...`), `16:10` media cards, pagination, and `Are you subscribed?` card (`Subscribe` + `Unsubscribe any time` + `useToast()` feedback).
+     - **`/mitoview/:slug` (`MitoViewArticle.tsx` + `/blog` redirects):** Back navigation to `/mitoview`, Georgia serif editorial reader supporting `river`, `split`, and `editorial` layouts, `sm`/`md`/`lg`/`banner` figures, `bodyJson` block stream (`kicker`, `h2`, `p`, `img`, `cta`), and edition-not-found state.
+     - **`/mitoview/unsubscribe` (`MitoViewUnsubscribe.tsx`):** `← All posts` link, `Leave the MitoView list`, visible bordered pill email input (fixing Staging's white-on-white input defect), and `?token=...` confirmation mode.
+
+---
+
+### `DEC-2026-11-18-COMPLIANCE-REFERENCE-LAYOUT` — Full-Width Reference `/compliance` Page & Live `furp02-staging` Profile/KYC Hydration (`Direction A` — `PD-04` Sentence Case)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — approved `Direction A` from uploaded `/compliance` reference screenshot + live UI `approved` & `Push and merge` on `feature/support-module`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation `approved` on `http://localhost:5000/compliance`, `@verifier` PASS, `82/82` contracts, `335/335` Vitest, `167/167` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - Shared & Backend: `shared/compliance.ts`, `server/complianceRoutes.ts`, `server/routes.ts`
+  - Frontend: `client/src/lib/compliance.ts`, `client/src/components/compliance/ComplianceVerifiedView.tsx`, `client/src/pages/Compliance.tsx` (`CompliancePage` only; `KycVerificationPage` & `KycReturnPage` untouched)
+  - Tests: `client/src/__tests__/support-mitoview-compliance.test.ts`, `tests/e2e/compliance.spec.js`
+- **Summary:**
+  1. **Reference `/compliance` Layout (`Direction A` + `PD-04` Sentence Case, Tailwind CSS Only):**
+     - Replaced the legacy centered `max-w-4xl` emerald `<Card>` (`compliance-verified-card`) and its `Refresh Status` / `Send Money` / `Back to Overview` buttons in `CompliancePage` with the full-width `DashboardLayout` compliance sheet (`Compliance` heading -> `AML address verification` -> `1px` `#e1dfdd` rule -> `Personal information` two-column rows: `Full name`, `Occupation`, `Date of birth`, `Gender`, `Address`, `City`, `Post code` in clean uppercase, `Resident country`; plus `Business verification`, Full Document KYC `Identity verification` + `Photo verification` + right-side bordered `Already verified` card, `Under review`, `Failed`, and pure-Tailwind `hostedUrl` KYC `<iframe>`).
+  2. **Live `furp02-staging` Hydration & Non-Regression:**
+     - `GET /api/compliance/overview` (`server/complianceRoutes.ts`) fetches live `GET /api/v1/Account/profile` and `GET /api/v1/KYC/Status?api-version=2` from `furp02-staging.funtechcom.com` when a customer `furpAccessToken` is active (launching customer FURP `POST /api/v1/Journey` only when KYC action is required), and falls back cleanly to the signed-in / demo user's server-stored `authUsers` profile + Mito KYC Journey when local (zero hardcoded names per `REF-18`; `/kyc` & `/kyc/return` untouched).
+  3. **Superseded Behaviour:** Legacy centered `compliance-verified-card` and `Refresh Status` / `Send Money` / `Back to Overview` buttons on `/compliance` superseded by `Direction A` reference layout (`2026-11-18`).
+
+---
+
+### `DEC-2026-11-18-DASHBOARD-REFER-COLLAPSIBLE-AND-SUMMARY-HOVER` — Premium Collapsible `Refer & earn` (`Direction 1A`) & Non-Zero `Account summary` Hover Border (`Direction 2A` + `Scope S1`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — explicitly replied `approved` & `push and merge` on `feature/dashboard-referral-and-summary-ux`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation + `@qa-verifier` PASS, `82/82` contracts, `335/335` Vitest, `168/168` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - `client/src/components/rewards/ReferEarnCard.tsx`
+  - `client/public/referral-gift-box.png` (alpha-matted transparent RGBA background + `bg-transparent` container)
+  - `client/src/pages/Dashboard.tsx`
+  - Tests: `tests/e2e/rewards.spec.js`, `tests/e2e/dashboard.spec.js`
+- **Summary:**
+  1. **`Refer & earn` Collapsible Section (`Direction 1A` — Unified Outer Shell + Pinned Top-Right Toggle + Actionable Collapsed Bar):**
+     - Open by default (`collapsed = false`) whenever a valid/applicable referral rule exists (`Boolean(offer) && !offer.cap_reached`; hidden when `!offer` per `REF-15`); manual collapse persisted per rule (`rhemito_refer_collapsed_${userId ?? "demo"}_${offer.rule_id}`) so any brand-new referral rule auto-opens, and `highlighted` (`OfferBanner`) auto-expands.
+     - Unified outer shell (`rounded-2xl border border-[#e6eef8] bg-white p-3.5 sm:p-4`) with persistent full-width header bar (`Refer & earn` + corridor pills left; `How it works` + `toggle-refer-earn-card` pinned at `100%` top-right in both states with `180°` rotating chevron and zero cursor teleportation).
+     - Smooth Framer Motion `AnimatePresence` + `motion.div` `height`/`opacity` choreography (`duration: 0.28`, `ease: [0.22, 1, 0.36, 1]`, respecting `useReducedMotion()`).
+     - Actionable collapsed bar (~58px single row) retaining Sentence-case stats (`Friends joined`, `Bonus earned`, or `"No referrals yet. Share your link to start earning."`), corridor & reward summary (`You <X> · Friend <Y>`), and 1-click `Copy link` + `Share` pills while preserving 100% of `REF-11..REF-23` contracts.
+  2. **`Account summary` Non-Zero Hover Border (`Direction 2A` + `Scope S1`):**
+     - Applies to interactive **`Wallet balance`** (`card-wallet-balance`, `#E5F1FE`) and **`Payment account`** (`card-collection-account`, `#E0EED6`) cards on Overview (`Total sent` and `/settings?tab=accounts` untouched).
+     - Reserves `border border-transparent` at rest (`0px` layout shift) and applies surface-harmonized chromatic hover borders + soft ambient glow + `-translate-y-[1px]` **only when the numeric value is `> 0`** (`Wallet balance`: `hover:border-[#5B9BF8]`; `Payment account`: `hover:border-[#58A96A]`; `0.00` remains `border-transparent` with no glow/lift).
+
+---
+
+### `DEC-2026-11-18-SEND-MONEY-RECIPIENT-LIST-REDESIGN` — `/send-money` Step 2 Recipient List Reference Layout (`Direction 3A`)
+- **Date Approved:** 18 November 2026 (`2026-11-18`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — confirmed via reference screenshot + `push and merge` on `feature/dashboard-referral-and-summary-ux`)
+- **Status:** `Release Approved` (`Verified` — Product Owner UI confirmation + `@qa-verifier` PASS, `82/82` contracts, `335/335` Vitest, `168/168` Playwright E2E green)
+- **Affected Files (`Rhemito-UI`):**
+  - `client/src/pages/SendMoney.tsx` (`currentStep === 2` recipient list, `mapBeneficiaryToRecipient`, & Step 3 network error resilience)
+  - `client/src/lib/sendMoney.ts` (`createSendMoneyTransaction` transient network retry)
+  - Tests: `tests/e2e/send_money.spec.js`
+- **Summary:**
+  1. **Reference 2-Line Recipient Row Layout (`Direction 3A` — Tailwind CSS Only, `PD-04` Harmonized):**
+     - Replaced Step 2 rainbow `AVATAR_COLORS`, multi-line colored `Acct:`/`Sort:`/`IBAN:`/`SWIFT:` pill chips, italic `"narration"` subline, and right-side currency code with clean `divide-y divide-[#efefee]` 2-line rows matching the uploaded reference screenshot:
+       - **Avatar (`44px`):** Soft ice-blue circle (`bg-[#DCEBFA] text-[#323130] text-[13px] sm:text-sm font-normal`) + bottom-right solid green dot (`bg-[#0E7A0D] w-2.5 h-2.5 rounded-full ring-[1.5px] ring-white`), harmonized across Step 2 `Recent Recipients` and search suggestions so recipient avatars stay visually consistent on the screen.
+       - **Left 2-Line Stack:** Semibold recipient name (`text-[15px] sm:text-base font-semibold text-[#111827]`) over muted bank/provider name (`text-[13px] sm:text-sm font-normal text-[#605E5C]`).
+       - **Right 2-Line Stack:** Dynamic teal delivery-method label (`#38A3A5`, `Bank deposit` / `Mobile money` / `Cash pickup` from `collectionMode` / `serviceCode` / `deliveryMethod`, harmonized with `PD-04` Sentence case) over proportional `tabular-nums` account identifier (`text-[13px] sm:text-sm font-normal text-[#605E5C] tabular-nums` using `r.account || compactIban(r.iban) || r.mobileNo || r.sortCode || r.currency`).
+  2. **Non-Regression:** Step 3 (`Recipient details`) and Right Sticky Summary continue to prefill and display all saved fields (`account`, `sortCode`, `iban`, `swift`, `narration`, `currency`), and keyboard/click selection (`setSelectedRecipient(r); handleNext()`) remains unchanged.
+  3. **Superseded Behaviour:** Earlier Step 2 recipient row rainbow avatar colors, `Acct:/Sort:/IBAN:/SWIFT:` chips, italic narration subline, and right-side `NGN` currency line superseded by `Direction 3A` (`2026-11-18`).

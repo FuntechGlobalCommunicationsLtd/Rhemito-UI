@@ -100,11 +100,11 @@ function resolveBeneficiaryCountryIso3(country?: string, currency?: string): str
 }
 
 const recentRecipients = [
-    { id: 1, name: "Akshita Gupta",   bank: "Barclays",        account: "12345678",  sortCode: "20-45-67", iban: "",                       swift: "",          currency: "GBP", country: "UK",            narration: "",                    initials: "AG", color: "bg-blue-100 text-blue-600" },
-    { id: 2, name: "Sarah Chen",      bank: "Access Bank",     account: "87654321",  sortCode: "",         iban: "",                       swift: "",          currency: "NGN", country: "Nigeria",       narration: "Family support",      initials: "SC", color: "bg-purple-100 text-purple-600" },
-    { id: 3, name: "David Okonkwo",   bank: "GTBank",          account: "11223344",  sortCode: "",         iban: "",                       swift: "",          currency: "NGN", country: "Nigeria",       narration: "Business payment",    initials: "DO", color: "bg-green-100 text-green-600" },
-    { id: 4, name: "Hans Müller",     bank: "Deutsche Bank",   account: "DE89370400440532013000", sortCode: "", iban: "DE89 3704 0044 0532 0130 00", swift: "DEUTDEFF", currency: "EUR", country: "Germany", narration: "Invoice #DE-2024", initials: "HM", color: "bg-orange-100 text-orange-600" },
-    { id: 5, name: "James Peterson",  bank: "Chase Bank",      account: "987654321", sortCode: "",         iban: "",                       swift: "CHASUS33",  currency: "USD", country: "United States", narration: "",                    initials: "JP", color: "bg-teal-100 text-teal-600" },
+    { id: 1, name: "Akshita Gupta",   bank: "Barclays",        account: "12345678",  sortCode: "20-45-67", iban: "",                       swift: "",          currency: "GBP", country: "UK",            narration: "",                    initials: "AG", color: "bg-[#DCEBFA] text-[#323130]" },
+    { id: 2, name: "Sarah Chen",      bank: "Access Bank",     account: "87654321",  sortCode: "",         iban: "",                       swift: "",          currency: "NGN", country: "Nigeria",       narration: "Family support",      initials: "SC", color: "bg-[#DCEBFA] text-[#323130]" },
+    { id: 3, name: "David Okonkwo",   bank: "GTBank",          account: "11223344",  sortCode: "",         iban: "",                       swift: "",          currency: "NGN", country: "Nigeria",       narration: "Business payment",    initials: "DO", color: "bg-[#DCEBFA] text-[#323130]" },
+    { id: 4, name: "Hans Müller",     bank: "Deutsche Bank",   account: "DE89370400440532013000", sortCode: "", iban: "DE89 3704 0044 0532 0130 00", swift: "DEUTDEFF", currency: "EUR", country: "Germany", narration: "Invoice #DE-2024", initials: "HM", color: "bg-[#DCEBFA] text-[#323130]" },
+    { id: 5, name: "James Peterson",  bank: "Chase Bank",      account: "987654321", sortCode: "",         iban: "",                       swift: "CHASUS33",  currency: "USD", country: "United States", narration: "",                    initials: "JP", color: "bg-[#DCEBFA] text-[#323130]" },
 ];
 
 const steps = [
@@ -2288,9 +2288,40 @@ export default function SendMoney() {
         resolveReasonOptionValue,
     ]);
 
-    const AVATAR_COLORS = [
-        "bg-[#D3E9FF] text-[#323130]",
-    ];
+    const RECIPIENT_AVATAR_CLASS = "bg-[#D3E9FF] text-[#323130]";
+
+    const resolveRecipientServiceLabel = (
+        r: { currency?: string; collectionMode?: string; serviceCode?: string },
+        fallbackDeliveryMethod: string,
+    ): string => {
+        const mode = (r.collectionMode || r.serviceCode || "").trim().toUpperCase();
+        if (mode) {
+            if (mode.includes("MOBILE")) return "Mobile money";
+            if (mode.includes("CASH") || mode.includes("PICKUP")) return "Cash pickup";
+            if (mode.includes("BANK") || mode.includes("ACCOUNT") || mode.includes("DEPOSIT")) return "Bank deposit";
+        }
+        if (fallbackDeliveryMethod === "mobile_money") return "Mobile money";
+        if (fallbackDeliveryMethod === "cash_pickup") return "Cash pickup";
+        return "Bank deposit";
+    };
+
+    const resolveRecipientAccountDisplay = (r: {
+        account?: string;
+        iban?: string;
+        mobileNo?: string;
+        sortCode?: string;
+        currency?: string;
+    }): string => {
+        const acct = (r.account || "").trim();
+        if (acct) {
+            return acct.length > 18 ? `${acct.slice(0, 4)}…${acct.slice(-4)}` : acct;
+        }
+        const cleanIban = (r.iban || "").replace(/\s+/g, "");
+        if (cleanIban) {
+            return cleanIban.length > 18 ? `${cleanIban.slice(0, 4)}…${cleanIban.slice(-4)}` : cleanIban;
+        }
+        return (r.mobileNo || "").trim() || (r.sortCode || "").trim() || r.currency || "";
+    };
 
     const mapBeneficiaryToRecipient = (b: MitoBeneficiaryItem, idx: number) => {
         const words = (b.name || "Beneficiary").trim().split(/\s+/);
@@ -2315,6 +2346,8 @@ export default function SendMoney() {
             beneficiaryNickname: savedMeta?.nickName || b.beneficiaryNickname,
             legalEntityType: b.legalEntityType,
             providerId: b.providerId,
+            serviceCode: b.serviceCode || "",
+            collectionMode: b.collectionMode || "",
             bank: (b.bankName && b.bankName !== "Bank" ? b.bankName : matchedBank) || b.bankName || "Bank Transfer",
             account: b.acctNumber || "",
             sortCode: b.sortCode || "",
@@ -2341,7 +2374,7 @@ export default function SendMoney() {
             countryIso3: b.countryIso3 || resolveBeneficiaryCountryIso3(b.country, b.currency),
             narration: savedMeta?.narration || b.narration || "",
             initials,
-            color: AVATAR_COLORS[idx % AVATAR_COLORS.length],
+            color: RECIPIENT_AVATAR_CLASS,
         };
     };
 
@@ -2791,12 +2824,18 @@ export default function SendMoney() {
             setTransactionSubmitted(true);
             setCurrentStep(4);
         } catch (err) {
-            const friendlyMsg = err instanceof Error && err.message
-                ? err.message
-                : "We couldn't create the beneficiary with the provided details. Please check the information and try again.";
+            const rawMsg = err instanceof Error && err.message ? err.message : "";
+            const isNetBlip = /failed to fetch|load failed|networkerror/i.test(rawMsg);
+            const hasExistingMitoBen = Boolean(
+                selectedRecipient?.beneficiaryId && String(selectedRecipient.beneficiaryId).includes("-"),
+            );
+            const friendlyMsg = isNetBlip
+                ? "Connection to the server was briefly interrupted. Please click Continue again."
+                : rawMsg ||
+                  "We couldn't create the beneficiary with the provided details. Please check the information and try again.";
             setBeneficiaryApiError(friendlyMsg);
             toast({
-                title: "Could not create beneficiary",
+                title: isNetBlip || hasExistingMitoBen ? "Unable to continue transfer" : "Could not create beneficiary",
                 description: friendlyMsg,
                 variant: "destructive",
             });
@@ -3570,7 +3609,7 @@ export default function SendMoney() {
                                             <div className="flex flex-wrap justify-start">
                                                 {baseRecipientsList.slice(0, 5).map(r => (
                                                     <div key={r.id} className="flex w-1/5 flex-col items-center cursor-pointer" onClick={() => { setSelectedRecipient(r); handleNext(); }}>
-                                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#D3E9FF] text-sm font-medium uppercase text-[#323130]">
+                                                        <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium uppercase ${RECIPIENT_AVATAR_CLASS}`}>
                                                             {r.initials}
                                                         </div>
                                                         <span className="mt-4 w-full truncate text-center text-sm text-[#323130]">{r.name.split(' ')[0]}</span>
@@ -3628,7 +3667,7 @@ export default function SendMoney() {
                                                                     className="flex items-center justify-between px-3 py-2.5 hover:bg-blue-50/70 rounded-lg cursor-pointer transition-colors"
                                                                 >
                                                                     <div className="flex items-center gap-3 min-w-0">
-                                                                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#D3E9FF] text-xs font-medium uppercase text-[#323130]">
+                                                                        <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium uppercase ${RECIPIENT_AVATAR_CLASS}`}>
                                                                             {r.initials}
                                                                         </div>
                                                                         <div className="min-w-0">
@@ -3693,36 +3732,52 @@ export default function SendMoney() {
                                         </div>
 
                                         {/* All Recipients List */}
-                                        <div className="space-y-1">
-                                            {displayRecipients.length === 0 && (
-                                                <div className="py-8 px-4 text-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-500">
-                                                    {recipientSearch.trim()
-                                                        ? `No created beneficiaries match "${recipientSearch.trim()}".`
-                                                        : "No saved beneficiaries found yet. Click 'New Recipient' to add one."}
-                                                </div>
-                                            )}
-                                            {displayRecipients.map(r => (
-                                                <div
-                                                    key={r.id}
-                                                    onClick={() => { setSelectedRecipient(r); handleNext(); }}
-                                                    className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-xl cursor-pointer transition-colors group"
-                                                >
-                                                    <div className="flex items-center gap-4 min-w-0">
-                                                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#D3E9FF] text-sm font-medium uppercase text-[#323130]">
-                                                            {r.initials}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <div className="font-medium text-[#323130] truncate">{r.name}</div>
-                                                            <div className="text-sm text-[#605E5C] truncate">{r.bank}{r.account ? ` · ${r.account}` : ""}</div>
+                                        {displayRecipients.length === 0 ? (
+                                            <div className="py-8 px-4 text-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-500">
+                                                {recipientSearch.trim()
+                                                    ? `No created beneficiaries match "${recipientSearch.trim()}".`
+                                                    : "No saved beneficiaries found yet. Click 'New Recipient' to add one."}
+                                            </div>
+                                        ) : (
+                                            <div className="divide-y divide-[#efefee] border-b border-[#efefee]" data-testid="send-money-recipient-list">
+                                                {displayRecipients.map((r) => (
+                                                    <div key={r.id}>
+                                                        <div
+                                                            data-testid={`recipient-row-${r.id}`}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onClick={() => { setSelectedRecipient(r); handleNext(); }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" || e.key === " ") {
+                                                                    e.preventDefault();
+                                                                    setSelectedRecipient(r);
+                                                                    handleNext();
+                                                                }
+                                                            }}
+                                                            className="flex items-center justify-between gap-4 py-3.5 my-0.5 px-2.5 -mx-2.5 rounded-lg hover:bg-[#F5F9FF]/80 active:bg-[#ECF4FF] cursor-pointer transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[#2e5bff]"
+                                                        >
+                                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                                <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium uppercase shrink-0 ${RECIPIENT_AVATAR_CLASS}`}>
+                                                                    {r.initials}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="text-[15px] sm:text-base font-semibold text-[#111827] leading-snug truncate">{r.name}</div>
+                                                                    <div className="text-[13px] sm:text-sm font-normal text-[#605E5C] leading-snug truncate mt-0.5">{r.bank}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right shrink-0 ml-3">
+                                                                <div className="text-[13px] sm:text-sm font-normal text-[#38A3A5] leading-snug">
+                                                                    {resolveRecipientServiceLabel(r, deliveryMethod)}
+                                                                </div>
+                                                                <div className="text-[13px] sm:text-sm font-normal text-[#605E5C] tabular-nums leading-snug mt-0.5">
+                                                                    {resolveRecipientAccountDisplay(r)}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className="text-right text-sm flex-shrink-0 ml-2">
-                                                        <div className="font-medium text-[#323130]">Bank Deposit</div>
-                                                        <div className="text-[#605E5C]">{r.currency}</div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                                ))}
+                                            </div>
+                                        )}
 
                                         <Button className="w-full h-12 bg-[#2e5bff] hover:bg-blue-700 text-white font-semibold rounded-full shadow-none">
                                             Show More
@@ -3851,7 +3906,11 @@ export default function SendMoney() {
                                         >
                                             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                                             <div className="flex-1 text-sm">
-                                                <p className="font-semibold text-red-900">Unable to save beneficiary</p>
+                                                <p className="font-semibold text-red-900">
+                                                    {selectedRecipient?.beneficiaryId && String(selectedRecipient.beneficiaryId).includes("-")
+                                                        ? "Unable to continue transfer"
+                                                        : "Unable to save beneficiary"}
+                                                </p>
                                                 <p className="text-red-700 mt-0.5">{beneficiaryApiError}</p>
                                             </div>
                                             <button

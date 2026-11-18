@@ -19,6 +19,7 @@ import {
   Gift,
   Sparkles,
   Users,
+  LifeBuoy,
 } from "lucide-react";
 import type { Notification, NotificationType } from "@/contexts/NotificationContext";
 
@@ -224,6 +225,17 @@ const TYPE_CONFIG: Record<NotificationType, TypeConfig> = {
   bonus_expired: { icon: Clock, containerClass: "bg-slate-100", iconClass: "text-slate-600" },
   bonus_reversed: { icon: XCircle, containerClass: "bg-destructive/10", iconClass: "text-destructive" },
   bonus_unblocked: { icon: Gift, containerClass: "bg-teal/10", iconClass: "text-teal" },
+  // Support tickets
+  support_ticket_reply: {
+    icon: LifeBuoy,
+    containerClass: "bg-blue-500/10",
+    iconClass: "text-[#2e5bff]",
+  },
+  support_ticket_resolved: {
+    icon: LifeBuoy,
+    containerClass: "bg-emerald-500/10",
+    iconClass: "text-emerald-600",
+  },
 };
 
 // ─── Relative timestamp ───────────────────────────────────────────────────────
@@ -272,6 +284,25 @@ export function NotificationItem({
   const handleClick = (): void => {
     if (!notification.isRead) {
       onRead(notification.id);
+    }
+    if (
+      notification.type === "support_ticket_reply" ||
+      notification.type === "support_ticket_resolved"
+    ) {
+      const meta = (notification.metadata ?? notification.data) as
+        | Record<string, unknown>
+        | undefined;
+      const ref = String(
+        meta?.referenceNumber || meta?.ticketNo || notification.txnId || ""
+      )
+        .replace(/^#/, "")
+        .trim();
+      navigate(
+        ref
+          ? `/my-tickets/request-details/${encodeURIComponent(ref)}`
+          : "/support/my-tickets"
+      );
+      return;
     }
     // Reward notifications deep-link to Bonus & Discounts (AC-6.2.2)
     if (notification.type.startsWith("reward_") || notification.type.startsWith("bonus_")) {

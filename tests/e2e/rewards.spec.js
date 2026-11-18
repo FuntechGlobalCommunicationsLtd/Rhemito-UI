@@ -111,6 +111,32 @@ test.describe('Refer & Earn on the Dashboard', () => {
         await expect(page.getByTestId('bonus-credit-card')).toHaveCount(0);
     });
 
+    test('Refer & earn opens by default for applicable rules, collapses with 1-click Copy link, and persists per rule', async ({ page }) => {
+        await mockRewards(page);
+        await page.goto('/');
+        const card = page.getByTestId('refer-earn-card');
+        const toggle = card.getByTestId('toggle-refer-earn-card');
+
+        // Open by default when a valid rule exists
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(card.getByLabel('Your referral link')).toBeVisible();
+
+        // Collapse smoothly — pinned toggle stays visible and 1-click Copy link + Share appear
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(card.getByLabel('Your referral link')).toHaveCount(0);
+        await expect(card).toContainText('You get £5.00 · Friend gets £10.00');
+        await expect(card.getByRole('button', { name: 'Copy link' })).toBeVisible();
+        await expect(card.getByTestId('refer-share-btn')).toHaveCount(1);
+
+        // Rule-scoped manual collapse persists across reloads, while a new rule_id opens by default
+        await page.reload();
+        await expect(card.getByTestId('toggle-refer-earn-card')).toHaveAttribute('aria-expanded', 'false');
+        await card.getByTestId('toggle-refer-earn-card').click();
+        await expect(card.getByTestId('toggle-refer-earn-card')).toHaveAttribute('aria-expanded', 'true');
+        await expect(card.getByLabel('Your referral link')).toBeVisible();
+    });
+
     test('offer banner can be dismissed and stays dismissed', async ({ page }) => {
         await mockRewards(page);
         await page.goto('/');

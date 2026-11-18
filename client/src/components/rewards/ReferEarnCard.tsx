@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeftRight, ArrowRight, Check, Copy, RefreshCw, Share2 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ArrowLeftRight, ArrowRight, Check, Copy, Gift, RefreshCw, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,22 @@ interface ReferEarnCardProps {
   highlighted?: boolean;
   /** Whether the Refer & Earn card starts collapsed on the Dashboard (expands on click or when highlighted). */
   defaultCollapsed?: boolean;
+  /** Optional customer/session identifier to persist manual collapse per referral rule. */
+  userId?: string | null;
+}
+
+function readStoredCollapsed(
+  userId: string | null | undefined,
+  ruleId: number | undefined,
+  defaultCollapsed: boolean,
+): boolean {
+  if (defaultCollapsed) return true;
+  if (!userId || ruleId === undefined) return false;
+  try {
+    return window.localStorage.getItem(`rhemito_refer_collapsed_${userId}_${ruleId}`) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function formatBoldAmounts(text: string) {
@@ -49,25 +66,60 @@ export function ReferEarnCard({
   onRetry,
   highlighted,
   defaultCollapsed = false,
+  userId,
 }: ReferEarnCardProps) {
   const { toast } = useToast();
+  const prefersReducedMotion = useReducedMotion();
+  const isJsdom = typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent);
+  const shouldReduceMotion = Boolean(prefersReducedMotion || isJsdom);
   const [copied, setCopied] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState<boolean>(defaultCollapsed);
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    readStoredCollapsed(userId, offer?.rule_id, defaultCollapsed),
+  );
+  const [isBodyExiting, setIsBodyExiting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const storageKey = offer ? `rhemito_refer_collapsed_${userId || "demo"}_${offer.rule_id}` : null;
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
   useEffect(() => {
+    if (!offer) return;
+    setIsBodyExiting(false);
+    setCollapsed(readStoredCollapsed(userId, offer.rule_id, defaultCollapsed));
+  }, [userId, offer?.rule_id, defaultCollapsed]);
+
+  useEffect(() => {
     if (highlighted) {
+      setIsBodyExiting(false);
       setCollapsed(false);
+      if (userId && storageKey) {
+        try {
+          window.localStorage.setItem(storageKey, "0");
+        } catch {
+          // Ignore storage errors
+        }
+      }
     }
-  }, [highlighted]);
+  }, [highlighted, userId, storageKey]);
+
+  const handleToggleCollapse = () => {
+    const next = !collapsed;
+    setIsBodyExiting(Boolean(next && !shouldReduceMotion));
+    setCollapsed(next);
+    if (userId && storageKey) {
+      try {
+        window.localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  };
 
   if (isLoading) {
     return (
@@ -170,296 +222,314 @@ export function ReferEarnCard({
       id="refer-earn"
       data-testid="refer-earn-card"
       className={cn(
-        "flex flex-col gap-4 transition-shadow duration-300",
-        highlighted && "rounded-2xl ring-2 ring-primary ring-offset-2",
+        "rounded-2xl border border-[#e6eef8] bg-white p-3.5 sm:p-4 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] transition-shadow duration-300",
+        highlighted && "ring-2 ring-primary ring-offset-2",
       )}
     >
-      {collapsed ? (
-        <div
-          className="rounded-xl border border-[#efefee] bg-white px-4 py-3 flex items-center justify-between gap-3"
-          data-testid="refer-latest"
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
-            <p className="font-display text-sm font-bold text-[#323130]">
-              Invite and get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
-            </p>
-            <div className="flex flex-wrap items-center gap-4" data-testid="refer-stats">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Friends joined</span>
-                <span className="font-display text-base font-bold text-[#323130]" data-testid="refer-count">{joined}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-teal-800">Bonus earned</span>
-                <span className="font-display text-base font-bold text-teal-700" data-testid="refer-earned">{earnedText}</span>
-              </div>
-              {joined > 0 ? (
-                <Link
-                  href={
-                    activeOffer.currency && offer.currency && activeOffer.currency !== offer.currency
-                      ? `/bonus-discounts?tab=referrals&currency=${encodeURIComponent(activeOffer.currency)}`
-                      : "/bonus-discounts?tab=referrals"
-                  }
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline"
-                >
-                  View all referrals
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </Link>
-              ) : (
-                <span className="text-xs text-slate-500">No referrals yet. Share your link to start earning.</span>
-              )}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            aria-expanded={false}
-            data-testid="toggle-refer-earn-card"
-            className="shrink-0 text-sm font-semibold text-[#2e5bff] hover:underline cursor-pointer"
-          >
-            Show
-          </button>
-        </div>
-      ) : (
-      <>
-      {/* Main Split Banner matching Figma 12498:26136 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* Left Blue Invite Card */}
-        <div className="lg:col-span-7 rounded-2xl bg-[#ecf5ff] p-5 flex flex-col justify-between gap-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            {/* Currency Corridor Switcher Pills */}
-            {allOffers.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="sr-only" data-testid="refer-corridor-label">
-                  Referrals are available for the following currency corridors:
-                </span>
-                <div
-                  className="inline-flex flex-wrap items-center gap-2"
-                  data-testid="refer-corridor-pills"
-                  aria-label="Select referral corridor rule"
-                >
-                  {allOffers.map((o) => {
-                    const isSelected = o.rule_id === activeOffer.rule_id && o.currency === activeOffer.currency;
-                    const dest = o.receive_currency ?? "ALL";
-                    return (
-                      <button
-                        key={`corridor-${o.rule_id}-${o.currency}-${dest}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedRuleId(o.rule_id);
-                          setCopied(false);
-                        }}
-                        aria-pressed={isSelected}
-                        aria-label={`${o.currency} → ${dest}`}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer",
-                          isSelected
-                            ? "bg-[#2e5bff] text-white shadow-2xs"
-                            : "bg-white text-[#605e5c] hover:text-[#323130]",
-                        )}
-                      >
-                        <span>{o.currency}</span>
-                        <span className="sr-only"> → </span>
-                        <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                        <span>{dest}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <span className="sr-only" data-testid="refer-currency-hint">
-                  Click a currency corridor to see its rewards
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 ml-auto">
-              {!collapsed && (
-                <button
-                  type="button"
-                  onClick={() => setHowOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded cursor-pointer"
-                >
-                  <span>How it works</span>
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setCollapsed(true)}
-                aria-expanded={true}
-                data-testid="toggle-refer-earn-card"
-                className="text-sm font-semibold text-[#2e5bff] hover:underline cursor-pointer"
-              >
-                Hide
-              </button>
-            </div>
-          </div>
-
-          {!collapsed && (
-            <>
-              {activeOffer.cap_reached ? (
-                <p className="text-[15px] leading-[23px] text-slate-700" data-testid="refer-cap-reached">
-                  You&apos;ve reached the maximum referral rewards for this programme. Thank you for spreading the word!
-                </p>
-              ) : (
-                <>
-                  {/* Hero Text + 3D Gift Box Image */}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex flex-col items-start">
-                      <h2 className="font-display text-3xl sm:text-[42px] font-bold text-[#323130] leading-[1.12] tracking-tight">
-                        Invite and get
-                      </h2>
-                      <p className="font-display text-3xl sm:text-[42px] font-bold text-[#323130] leading-[1.12] tracking-tight">
-                        {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
-                      </p>
-                    </div>
-                    <div className="relative h-[116px] w-[176px] sm:h-[123px] sm:w-[193px] rounded-2xl bg-white overflow-hidden shrink-0">
-                      <img
-                        src="/referral-gift-box.png"
-                        alt="Referral reward gift"
-                        className="absolute right-0 -top-2 h-[155px] w-[150px] object-cover pointer-events-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Share your link Input + Embedded Copy + Pill Share Button */}
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <label htmlFor="referral-link" className="text-sm font-normal text-[#323130]">
-                        Share your link
-                      </label>
-                      {effectiveCode && (
-                        <span
-                          className="sr-only font-mono text-xs font-semibold text-[#2e5bff]"
-                          data-testid="refer-active-code"
-                        >
-                          {effectiveCode}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                      <div className="flex flex-1 items-center gap-2 rounded-lg border border-[#cfcece] bg-white h-10 pl-3 pr-1.5">
-                        <input
-                          id="referral-link"
-                          aria-label="Your referral link"
-                          ref={inputRef}
-                          readOnly
-                          value={link.replace(/^https?:\/\//, "")}
-                          onFocus={(e) => e.currentTarget.select()}
-                          className="h-full flex-1 min-w-0 bg-transparent text-sm font-medium text-[#7b7b7b] focus:outline-none truncate"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCopy}
-                          aria-label={copied ? "Copied" : "Copy link"}
-                          className={cn(
-                            "h-8 min-w-[76px] rounded-full px-4 text-sm font-semibold text-white shrink-0 transition-colors cursor-pointer",
-                            copied ? "bg-teal-700 hover:bg-teal-800" : "bg-[#2e5bff] hover:bg-blue-700",
-                          )}
-                        >
-                          {copied ? "Copied" : "Copy"}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleShare}
-                        data-testid="refer-share-btn"
-                        className="inline-flex h-10 min-w-[116px] items-center justify-center gap-2 rounded-full bg-[#2e5bff] hover:bg-blue-700 px-5 text-sm font-semibold text-white shrink-0 transition-colors cursor-pointer"
-                      >
-                        <Share2 className="h-4 w-4" />
-                        <span>Share</span>
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setShareOpen(true)}
-                        data-testid="refer-preview-marketing-btn"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline cursor-pointer"
-                      >
-                        <span>Preview &amp; copy full invite message</span>
-                        <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Right Stacked Cards: You get / They get */}
-        {!collapsed && !activeOffer.cap_reached && (
-          <div className="lg:col-span-5 flex flex-col gap-4 justify-between">
-            <div className="flex-1 rounded-lg border border-[#cfcece] bg-white p-4 flex flex-col justify-center gap-2">
-              <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#323130] leading-tight">
-                You get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
-              </h3>
-              <p className="text-sm sm:text-base text-[#323130] leading-snug">
-                When you invite friends and they complete their first successful transaction after signing up using your link
-              </p>
-            </div>
-            <div className="flex-1 rounded-lg border border-[#cfcece] bg-white p-4 flex flex-col justify-center gap-2">
-              <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#323130] leading-tight">
-                They get {formatMoney(activeOffer.referee_reward, activeOffer.currency)}
-              </h3>
-              <p className="text-sm sm:text-base text-[#323130] leading-snug">
-                When they sign up using your link
-              </p>
-            </div>
-            {/* Contract-pinned offer sentence with bold amounts */}
-            <div className="sr-only">
-              <OfferSentence text={activeOffer.text} />
-            </div>
-          </div>
-        )}
+      {/* Contract-pinned offer sentence with bold amounts — always present in DOM regardless of collapsed state */}
+      <div className="sr-only">
+        <OfferSentence text={activeOffer.text} />
       </div>
 
-      {/* Compact Footer Status / Totals */}
-      {!collapsed && (
-        <div
-          className="rounded-xl border border-[#efefee] bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-          data-testid="refer-latest"
-        >
-          {joined === 0 ? (
-            <p className="text-sm text-slate-500">No referrals yet. Share your link to start earning.</p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-4" data-testid="refer-stats">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Friends joined</span>
-                  <span className="font-display text-base font-bold text-[#323130]" data-testid="refer-count">
-                    {joined}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-teal-800">Bonus earned</span>
-                  <span className="font-display text-base font-bold text-teal-700" data-testid="refer-earned">
-                    {earnedText}
-                  </span>
-                </div>
-                {waiting > 0 && (
-                  <p className="text-xs sm:text-sm text-slate-500" data-testid="refer-waiting">
-                    {waiting} {waiting === 1 ? "friend is" : "friends are"} yet to send {formatMoney(offer.floor, offer.currency)}+
-                  </p>
-                )}
-              </div>
-              <Link
-                href={
-                  activeOffer.currency && offer.currency && activeOffer.currency !== offer.currency
-                    ? `/bonus-discounts?tab=referrals&currency=${encodeURIComponent(activeOffer.currency)}`
-                    : "/bonus-discounts?tab=referrals"
-                }
-                className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#2e5bff] hover:underline shrink-0"
+      {/* Persistent Top Header Bar (zero cursor teleportation across expanded & collapsed states) */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          <div className="inline-flex items-center gap-2 shrink-0">
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#ecf5ff] text-[#2e5bff]">
+              <Gift className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span className="font-display text-sm sm:text-[15px] font-semibold text-[#323130]">
+              Refer &amp; earn
+            </span>
+          </div>
+
+          {allOffers.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="sr-only" data-testid="refer-corridor-label">
+                Referrals are available for the following currency corridors:
+              </span>
+              <div
+                className="inline-flex flex-wrap items-center gap-1.5"
+                data-testid="refer-corridor-pills"
+                aria-label="Select referral corridor rule"
               >
-                View all referrals
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </>
+                {allOffers.map((o) => {
+                  const isSelected = o.rule_id === activeOffer.rule_id && o.currency === activeOffer.currency;
+                  const dest = o.receive_currency ?? "ALL";
+                  return (
+                    <button
+                      key={`corridor-${o.rule_id}-${o.currency}-${dest}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRuleId(o.rule_id);
+                        setCopied(false);
+                      }}
+                      aria-pressed={isSelected}
+                      aria-label={`${o.currency} → ${dest}`}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs sm:text-[13px] font-medium transition-colors cursor-pointer",
+                        isSelected
+                          ? "bg-[#2e5bff] text-white shadow-2xs"
+                          : "bg-[#f3f6fb] text-[#605e5c] hover:bg-[#e8f0fe] hover:text-[#323130]",
+                      )}
+                    >
+                      <span>{o.currency}</span>
+                      <span className="sr-only"> → </span>
+                      <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>{dest}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="sr-only" data-testid="refer-currency-hint">
+                Click a currency corridor to see its rewards
+              </span>
+            </div>
+          )}
+
+          {collapsed && !activeOffer.cap_reached && (
+            <span className="text-xs sm:text-[13px] font-medium text-[#323130]">
+              You get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)} · Friend gets{" "}
+              {formatMoney(activeOffer.referee_reward, activeOffer.currency)}
+            </span>
+          )}
+          {collapsed && !isBodyExiting && activeOffer.cap_reached && (
+            <span className="text-xs text-slate-600" data-testid="refer-cap-reached">
+              You&apos;ve reached the maximum referral rewards for this programme. Thank you for spreading the word!
+            </span>
           )}
         </div>
-      )}
-      </>
-      )}
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={() => setHowOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded cursor-pointer"
+            >
+              <span>How it works</span>
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+
+          {collapsed && !isBodyExiting && !activeOffer.cap_reached && (
+            <>
+              <button
+                type="button"
+                onClick={handleCopy}
+                aria-label={copied ? "Copied" : "Copy link"}
+                className={cn(
+                  "inline-flex h-8 items-center justify-center rounded-full px-3.5 text-xs font-semibold text-white transition-colors cursor-pointer",
+                  copied ? "bg-teal-700 hover:bg-teal-800" : "bg-[#2e5bff] hover:bg-blue-700",
+                )}
+              >
+                {copied ? "Copied" : "Copy link"}
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                data-testid="refer-share-btn"
+                aria-label="Share referral link"
+                title="Share referral link"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d6e6ff] bg-white text-[#2e5bff] hover:bg-blue-50 transition-colors cursor-pointer"
+              >
+                <Share2 className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={handleToggleCollapse}
+            aria-expanded={!collapsed}
+            aria-controls="refer-earn-collapsible-body"
+            data-testid="toggle-refer-earn-card"
+            className="text-sm font-semibold text-[#2e5bff] hover:underline cursor-pointer"
+          >
+            {collapsed ? "Show" : "Hide"}
+          </button>
+        </div>
+      </div>
+
+      {/* Animated Collapsible Split Banner */}
+      <AnimatePresence initial={false} onExitComplete={() => setIsBodyExiting(false)}>
+        {!collapsed && (
+          <motion.div
+            id="refer-earn-collapsible-body"
+            key="refer-body"
+            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="pt-3.5">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                {/* Left Blue Invite Card */}
+                <div
+                  className={cn(
+                    activeOffer.cap_reached ? "lg:col-span-12" : "lg:col-span-7",
+                    "rounded-2xl bg-[#ecf5ff] p-5 flex flex-col justify-between gap-4",
+                  )}
+                >
+                  {activeOffer.cap_reached ? (
+                    <p className="text-[15px] leading-[23px] text-slate-700" data-testid="refer-cap-reached">
+                      You&apos;ve reached the maximum referral rewards for this programme. Thank you for spreading the word!
+                    </p>
+                  ) : (
+                    <>
+                      {/* Hero Text + 3D Gift Box Image */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex flex-col items-start">
+                          <h2 className="font-display text-3xl sm:text-[42px] font-bold text-[#323130] leading-[1.12] tracking-tight">
+                            Invite and get
+                          </h2>
+                          <p className="font-display text-3xl sm:text-[42px] font-bold text-[#323130] leading-[1.12] tracking-tight">
+                            {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
+                          </p>
+                        </div>
+                        <div className="relative h-[116px] w-[176px] sm:h-[123px] sm:w-[193px] rounded-2xl bg-transparent overflow-hidden shrink-0">
+                          <img
+                            src="/referral-gift-box.png"
+                            alt="Referral reward gift"
+                            className="absolute right-0 -top-2 h-[155px] w-[150px] object-cover pointer-events-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Share your link Input + Embedded Copy + Pill Share Button */}
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <label htmlFor="referral-link" className="text-sm font-normal text-[#323130]">
+                            Share your link
+                          </label>
+                          {effectiveCode && (
+                            <span
+                              className="sr-only font-mono text-xs font-semibold text-[#2e5bff]"
+                              data-testid="refer-active-code"
+                            >
+                              {effectiveCode}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                          <div className="flex flex-1 items-center gap-2 rounded-lg border border-[#cfcece] bg-white h-10 pl-3 pr-1.5">
+                            <input
+                              id="referral-link"
+                              aria-label="Your referral link"
+                              ref={inputRef}
+                              readOnly
+                              value={link.replace(/^https?:\/\//, "")}
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="h-full flex-1 min-w-0 bg-transparent text-sm font-medium text-[#7b7b7b] focus:outline-none truncate"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleCopy}
+                              aria-label={copied ? "Copied" : "Copy link"}
+                              className={cn(
+                                "h-8 min-w-[76px] rounded-full px-4 text-sm font-semibold text-white shrink-0 transition-colors cursor-pointer",
+                                copied ? "bg-teal-700 hover:bg-teal-800" : "bg-[#2e5bff] hover:bg-blue-700",
+                              )}
+                            >
+                              {copied ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleShare}
+                            data-testid="refer-share-btn"
+                            className="inline-flex h-10 min-w-[116px] items-center justify-center gap-2 rounded-full bg-[#2e5bff] hover:bg-blue-700 px-5 text-sm font-semibold text-white shrink-0 transition-colors cursor-pointer"
+                          >
+                            <Share2 className="h-4 w-4" aria-hidden="true" />
+                            <span>Share</span>
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setShareOpen(true)}
+                            data-testid="refer-preview-marketing-btn"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline cursor-pointer"
+                          >
+                            <span>Preview &amp; copy full invite message</span>
+                            <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Right Stacked Cards: You get / They get */}
+                {!activeOffer.cap_reached && (
+                  <div className="lg:col-span-5 flex flex-col gap-4 justify-between">
+                    <div className="flex-1 rounded-lg border border-[#cfcece] bg-white p-4 flex flex-col justify-center gap-2">
+                      <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#323130] leading-tight">
+                        You get {formatMoney(activeOffer.referrer_reward, activeOffer.currency)}
+                      </h3>
+                      <p className="text-sm sm:text-base text-[#323130] leading-snug">
+                        When you invite friends and they complete their first successful transaction after signing up using your link
+                      </p>
+                    </div>
+                    <div className="flex-1 rounded-lg border border-[#cfcece] bg-white p-4 flex flex-col justify-center gap-2">
+                      <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#323130] leading-tight">
+                        They get {formatMoney(activeOffer.referee_reward, activeOffer.currency)}
+                      </h3>
+                      <p className="text-sm sm:text-base text-[#323130] leading-snug">
+                        When they sign up using your link
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Persistent Bottom Summary Strip (anchored across both expanded & collapsed states) */}
+      <div
+        className="mt-3 rounded-xl border border-[#efefee] bg-[#fafbfc] px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+        data-testid="refer-latest"
+      >
+        {joined === 0 ? (
+          <p className="text-sm text-slate-500">No referrals yet. Share your link to start earning.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-4" data-testid="refer-stats">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-[#605e5c]">Friends joined</span>
+                <span className="font-display text-base font-bold text-[#323130]" data-testid="refer-count">
+                  {joined}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-teal-800">Bonus earned</span>
+                <span className="font-display text-base font-bold text-teal-700" data-testid="refer-earned">
+                  {earnedText}
+                </span>
+              </div>
+              {waiting > 0 && (
+                <p className="text-xs sm:text-sm text-slate-500" data-testid="refer-waiting">
+                  {waiting} {waiting === 1 ? "friend is" : "friends are"} yet to send {formatMoney(offer.floor, offer.currency)}+
+                </p>
+              )}
+            </div>
+            <Link
+              href={
+                activeOffer.currency && offer.currency && activeOffer.currency !== offer.currency
+                  ? `/bonus-discounts?tab=referrals&currency=${encodeURIComponent(activeOffer.currency)}`
+                  : "/bonus-discounts?tab=referrals"
+              }
+              className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#2e5bff] hover:underline shrink-0"
+            >
+              View all referrals
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </>
+        )}
+      </div>
 
       <Dialog open={howOpen} onOpenChange={setHowOpen}>
         <DialogContent className="sm:max-w-md">
