@@ -301,17 +301,6 @@ export function ReferEarnCard({
         </div>
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
-          {!collapsed && (
-            <button
-              type="button"
-              onClick={() => setHowOpen(true)}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded cursor-pointer"
-            >
-              <span>How it works</span>
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
-
           {collapsed && !isBodyExiting && !activeOffer.cap_reached && (
             <>
               <button
@@ -378,6 +367,16 @@ export function ReferEarnCard({
                     </p>
                   ) : (
                     <>
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setHowOpen(true)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e5bff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded cursor-pointer"
+                        >
+                          <span>How it works</span>
+                          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
                       {/* Hero Text + 3D Gift Box Image */}
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex flex-col items-start">
