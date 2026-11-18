@@ -6,6 +6,9 @@ import { registerPromoRoutes, startPromo } from "./promo";
 import { registerBonusRoutes, startBonus } from "./bonus";
 import { registerRewardsRoutes } from "./rewardsRoutes";
 import { registerFurpV1CompatRoutes } from "./furpV1CompatRoutes";
+import { registerSupportRoutes } from "./supportRoutes";
+import { registerMitoViewRoutes } from "./mitoViewRoutes";
+import { registerComplianceRoutes } from "./complianceRoutes";
 import { captureDevice } from "./deviceId";
 import { registerAuthRoutes } from "./auth";
 import { registerInvoiceRoutes } from "./invoiceRoutes";
@@ -128,6 +131,12 @@ export async function registerRoutes(
   registerSendMoneyRoutes(app);
   registerRewardsRoutes(app);
   registerFurpV1CompatRoutes(app);
+  // Support module (FAQs, tickets, unread badge count) — see supportRoutes.ts
+  registerSupportRoutes(app);
+  // MitoView newsletter (live furp02-staging proxy + offline fixture) — see mitoViewRoutes.ts
+  registerMitoViewRoutes(app);
+  // Compliance overview (live FURP profile/KYC hydration + local fallback) — see complianceRoutes.ts
+  registerComplianceRoutes(app);
   // Received Payments (merged view of settled/in-flight money-in payments)
   registerPaymentsReceivedRoutes(app);
   // Promo codes live in Mito Money; the promo module forwards to it (server/promo, PROMO-RHEMITO spec).

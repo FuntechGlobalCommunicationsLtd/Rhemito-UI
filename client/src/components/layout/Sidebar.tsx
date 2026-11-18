@@ -66,6 +66,12 @@ export function Sidebar({
     staleTime: 30_000,
   });
   const unreadNotifications = unreadCountData?.count ?? 0;
+  const { data: unreadSupportData } = useQuery<{ count: number } | null>({
+    queryKey: ["/api/support/unread-count"],
+    queryFn: getQueryFn<{ count: number }>({ on401: "returnNull" }),
+    staleTime: 15_000,
+  });
+  const unreadSupport = unreadSupportData?.count ?? 0;
   const { toast } = useToast();
 
   const handleLogout = async () => {
@@ -94,12 +100,14 @@ export function Sidebar({
   }) => {
     const isOverview = item.href === "/";
     const isReward = item.href === "/bonus-discounts";
+    const isSupport = item.href === "/support";
     const isNotifications = item.href === "/notifications/archive";
     const isActive =
       location === item.href ||
       (isOverview && location.startsWith("/overview")) ||
       (!isOverview && location.startsWith(item.href)) ||
-      (isReward && location.startsWith("/rewards"));
+      (isReward && location.startsWith("/rewards")) ||
+      (isSupport && (location.startsWith("/support") || location.startsWith("/my-tickets")));
 
     const content = (
       <div
@@ -126,6 +134,17 @@ export function Sidebar({
         {!isCollapsed && (
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <span className="truncate">{item.label}</span>
+            {isSupport && unreadSupport > 0 && (
+              <span
+                className="relative inline-flex shrink-0 items-center justify-center pt-1 pr-2"
+                data-testid="sidebar-support-badge"
+              >
+                <Bell className="h-[18px] w-[18px] fill-[#2e5bff] text-[#2e5bff]" />
+                <span className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#e84545] px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+                  {unreadSupport > 99 ? "99+" : unreadSupport}
+                </span>
+              </span>
+            )}
             {isNotifications && unreadNotifications > 0 && (
               <span
                 className="relative inline-flex shrink-0 items-center justify-center pt-1 pr-2"

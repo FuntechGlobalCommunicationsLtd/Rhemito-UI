@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyRound, Lock, User, Mail, Phone, MapPin, CheckCircle2, Check } from "lucide-react";
 import { useLocation } from "wouter";
 import { PasswordInput } from "@/components/ui/password-input";
+import { getSafePostAuthRedirect } from "@/lib/support";
 
 // Simulating the UI state for the OBO Flow
 type AuthStep = "email" | "pin" | "password" | "review";
@@ -79,7 +80,7 @@ export default function Login() {
 
     const handleProfileSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        setLocation("/");
+        setLocation(getSafePostAuthRedirect());
     };
 
     return (
