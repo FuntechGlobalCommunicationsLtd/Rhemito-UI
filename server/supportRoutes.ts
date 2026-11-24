@@ -30,6 +30,7 @@ import {
   furpPostMultipart,
   getCustomerFurpToken,
   isRealFurpLiveEnabled,
+  isRealFurpSubmitEnabled,
   type FurpJsonResult,
 } from "./furpClient";
 import {
@@ -524,7 +525,7 @@ export function registerSupportRoutes(app: Express): void {
   const listHandler = async (req: Request, res: Response) => {
     const userId = requireUser(req, res);
     if (!userId) return;
-    if (isRealFurpLiveEnabled()) return liveList(req, res, userId);
+    if (isRealFurpSubmitEnabled()) return liveList(req, res, userId);
     try {
       const result = await listSupportTickets(userId, {
         Status: queryValue(req, "Status"),
@@ -544,7 +545,7 @@ export function registerSupportRoutes(app: Express): void {
   const detailHandler = async (req: Request, res: Response) => {
     const userId = requireUser(req, res);
     if (!userId) return;
-    if (isRealFurpLiveEnabled()) return liveDetail(req, res, userId);
+    if (isRealFurpSubmitEnabled()) return liveDetail(req, res, userId);
     const referenceNumber =
       req.params.referenceNumber ??
       queryValue(req, "referenceNumber") ??
@@ -573,7 +574,7 @@ export function registerSupportRoutes(app: Express): void {
   const createHandler = async (req: Request, res: Response) => {
     const userId = requireUser(req, res);
     if (!userId) return;
-    if (isRealFurpLiveEnabled()) return liveCreate(req, res, userId);
+    if (isRealFurpSubmitEnabled()) return liveCreate(req, res, userId);
     try {
       const { fields, attachment } = readPayload(req);
       const created = await createSupportTicket(userId, {
@@ -595,7 +596,7 @@ export function registerSupportRoutes(app: Express): void {
   const replyHandler = async (req: Request, res: Response) => {
     const userId = requireUser(req, res);
     if (!userId) return;
-    if (isRealFurpLiveEnabled()) return liveReply(req, res, userId);
+    if (isRealFurpSubmitEnabled()) return liveReply(req, res, userId);
     try {
       const { fields, attachment } = readPayload(req);
       const referenceNumber = String(
@@ -628,7 +629,7 @@ export function registerSupportRoutes(app: Express): void {
       const reference = lower["referencenumber"] ?? lower["ticketno"];
       const notificationId = lower["notificationid"] ?? lower["id"];
 
-      if (isRealFurpLiveEnabled()) {
+      if (isRealFurpSubmitEnabled()) {
         const customerToken = getCustomerFurpToken(req, userId);
         if (!customerToken) {
           res.status(200).json({ data: { marked: 0 }, message: "Success.", code: 200, responseType: "Success", requiresFurpAuth: true });
@@ -657,7 +658,7 @@ export function registerSupportRoutes(app: Express): void {
   app.get("/api/support/unread-count", async (req: Request, res: Response) => {
     const userId = requireUser(req, res);
     if (!userId) return;
-    if (isRealFurpLiveEnabled()) return liveUnreadCount(req, res, userId);
+    if (isRealFurpSubmitEnabled()) return liveUnreadCount(req, res, userId);
     try {
       await ensureUserSupportSeeded(userId);
       res.status(200).json({ count: getUnreadSupportNotificationCount(userId) });

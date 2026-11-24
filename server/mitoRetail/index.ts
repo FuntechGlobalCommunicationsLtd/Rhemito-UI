@@ -295,6 +295,28 @@ export function isMitoRetailConfigured(): boolean {
   return loadMitoRetailCredentials() !== null;
 }
 
+/**
+ * External Mito/FURP Staging write/submit guard (DEC-2026-11-24-DISABLE-STAGING-SUBMISSIONS, Option 2).
+ *
+ * Read-only GET lookups (rates, providers, requirements, FAQs, MitoView posts, bank details) remain allowed
+ * when Mito/FURP credentials are configured, while ALL external write/submit mutations to Mito/Rhemito Staging
+ * are disabled by default so data is stored strictly in our own local DB.
+ *
+ * Opt-in override: set `ALLOW_EXTERNAL_STAGING_SUBMIT=1`.
+ * Under VITEST, `MITO_RETAIL_ALLOW_IN_VITEST=1` (with mocked fetch) continues to allow contract tests to
+ * exercise the gateway confirmation flow unless `ALLOW_EXTERNAL_STAGING_SUBMIT=0` is explicitly set.
+ */
+export function isMitoStagingSubmitEnabled(): boolean {
+  if (!isMitoRetailConfigured()) return false;
+  if (process.env.VITEST) {
+    return (
+      process.env.MITO_RETAIL_ALLOW_IN_VITEST === "1" &&
+      process.env.ALLOW_EXTERNAL_STAGING_SUBMIT !== "0"
+    );
+  }
+  return process.env.ALLOW_EXTERNAL_STAGING_SUBMIT === "1";
+}
+
 export async function getMitoRetailToken(forceRefresh = false): Promise<{ token: string; partnerUserId: string }> {
   const creds = loadMitoRetailCredentials();
   if (!creds) {
@@ -540,7 +562,7 @@ export interface MitoRetailUpdateUserPayload {
 }
 
 export async function updateMitoRetailUser(payload: MitoRetailUpdateUserPayload): Promise<boolean> {
-  if (!isMitoRetailConfigured()) return false;
+  if (!isMitoStagingSubmitEnabled()) return false;
   try {
     const creds = loadMitoRetailCredentials()!;
     const { token } = await getMitoRetailToken();
@@ -607,6 +629,11 @@ export async function registerOrSyncMitoRetailUser(user: AuthUser): Promise<stri
     log(`ℹ️ Linked existing Mito Sandbox user ${cleanEmail} (mitoUserId=${preExisting.userId})`, "mito-retail");
     return preExisting.userId;
   }
+
+    if (!isMitoStagingSubmitEnabled()) {
+      log(`ℹ️ Skipped Mito POST /api/v1/mito/Users for ${cleanEmail} (external Staging submissions disabled)`, "mito-retail");
+      return null;
+    }
 
     const res = await fetch(`${creds.baseUrl}/api/v1/mito/Users`, {
       method: "POST",
@@ -2122,7 +2149,7 @@ function createLocalMitoBeneficiary(input: CreateMitoBeneficiaryInput): CreateMi
 export async function createMitoBeneficiary(
   input: CreateMitoBeneficiaryInput,
 ): Promise<CreateMitoBeneficiaryResult | null> {
-  if (!isMitoRetailConfigured() || String(input.providerId || "").startsWith(FALLBACK_PROVIDER_ID_PREFIX)) {
+  if (!isMitoStagingSubmitEnabled() || String(input.providerId || "").startsWith(FALLBACK_PROVIDER_ID_PREFIX)) {
     return createLocalMitoBeneficiary(input);
   }
   try {
@@ -2137,7 +2164,7 @@ export async function createMitoBeneficiary(
 async function createMitoRemoteBeneficiary(
   input: CreateMitoBeneficiaryInput,
 ): Promise<CreateMitoBeneficiaryResult | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
 
@@ -2351,7 +2378,7 @@ loadUpdatedBeneficiariesFromDisk();
   saveDeletedBeneficiariesToDisk();
   if (isLocalMitoBeneficiaryId(cleanId)) removeLocalMitoBeneficiary(cleanId);
 
-  if (!isMitoRetailConfigured() || !cleanId || cleanId === "LOCAL" || isLocalMitoBeneficiaryId(cleanId)) return true;
+  if (!isMitoStagingSubmitEnabled() || !cleanId || cleanId === "LOCAL" || isLocalMitoBeneficiaryId(cleanId)) return true;
   try {
     const creds = loadMitoRetailCredentials()!;
     const { token } = await getMitoRetailToken();
@@ -2493,7 +2520,7 @@ export async function updateMitoBeneficiary(params: {
     acctNumber: cleanAcct,
   });
 
-  if (isMitoRetailConfigured() && cleanId && cleanId !== "LOCAL" && !isLocalMitoBeneficiaryId(cleanId)) {
+  if (isMitoStagingSubmitEnabled() && cleanId && cleanId !== "LOCAL" && !isLocalMitoBeneficiaryId(cleanId)) {
     try {
       const creds = loadMitoRetailCredentials()!;
       const { token } = await getMitoRetailToken();
@@ -2663,7 +2690,7 @@ export async function lockMitoExchangeRate(input: {
   isProfileUpdateRequired?: boolean;
   source: "validate_rate" | "exchange_rates" | "affiliate_rates";
 } | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
   const effectiveUserId = (input.userId || DEFAULT_MITO_SENDER_USER_ID).trim();
@@ -2904,7 +2931,7 @@ export async function sendMitoTransaction(input: {
   requestPayload?: Record<string, unknown>;
   message?: string;
 } | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
 
@@ -3156,7 +3183,7 @@ export async function initiateMitoHostedTransaction(input: {
   requestPayload?: Record<string, unknown>;
   message?: string;
 } | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
 
@@ -3295,7 +3322,7 @@ export async function createMitoKycJourney(input: {
   webhookUrl?: string | null;
   journeyType?: number;
 }): Promise<MitoKycJourneyResult | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
   const effectiveUserId = (input.userId || DEFAULT_MITO_SENDER_USER_ID).trim();
@@ -3458,7 +3485,7 @@ export async function syncMitoCardPaymentStatus(ckoIdOrPaymentId: string): Promi
   locationUrl: string | null;
 } | null> {
   const cleanId = String(ckoIdOrPaymentId || "").trim();
-  if (!cleanId || cleanId.startsWith("ps_") || !isMitoRetailConfigured()) return null;
+  if (!cleanId || cleanId.startsWith("ps_") || !isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   try {
     const res = await fetch(
@@ -3542,7 +3569,7 @@ export async function initiateMitoPlaidRetailCollection(input: {
   requestPayload?: Record<string, unknown>;
   message?: string;
 } | null> {
-  if (!isMitoRetailConfigured()) return null;
+  if (!isMitoStagingSubmitEnabled()) return null;
   const creds = loadMitoRetailCredentials()!;
   const { token } = await getMitoRetailToken();
   const effectiveUserId = (input.userId || DEFAULT_MITO_SENDER_USER_ID).trim();
@@ -3721,7 +3748,7 @@ export async function syncMitoPlaidRetailPaymentStatus(input: {
 } | null> {
   const partnerRef = String(input.partnerReferenceNumber || "").trim();
   const retailRef = String(input.retailReference || "").trim();
-  if ((!partnerRef && !retailRef) || !isMitoRetailConfigured()) return null;
+  if ((!partnerRef && !retailRef) || !isMitoStagingSubmitEnabled()) return null;
 
   const creds = loadMitoRetailCredentials()!;
   try {

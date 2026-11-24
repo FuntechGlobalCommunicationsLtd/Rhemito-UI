@@ -17,6 +17,7 @@ import type { Request } from "express";
 import {
   getMitoRetailToken,
   isMitoRetailConfigured,
+  isMitoStagingSubmitEnabled,
   loadMitoRetailCredentials,
 } from "./mitoRetail";
 
@@ -34,6 +35,14 @@ export function isRealFurpLiveEnabled(): boolean {
   if (process.env.FURP_LIVE === "0") return false;
   if (process.env.FURP_BASE_URL === "") return false;
   return isMitoRetailConfigured();
+}
+
+/**
+ * True only when BOTH live FURP is enabled AND external Staging write submissions are explicitly allowed
+ * (`ALLOW_EXTERNAL_STAGING_SUBMIT=1`). Defaults to false (Option 2: read-only GET allowed, all writes local).
+ */
+export function isRealFurpSubmitEnabled(): boolean {
+  return isRealFurpLiveEnabled() && isMitoStagingSubmitEnabled();
 }
 
 function baseUrlAndKey(): { baseUrl: string; apiKey: string } {
@@ -227,6 +236,10 @@ export async function furpFetchJson<T = any>(
     timeoutMs?: number;
   },
 ): Promise<FurpJsonResult<T>> {
+  const method = (opts.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && !isRealFurpSubmitEnabled()) {
+    throw new Error(`Blocked external Staging ${method} submission to ${pathWithQuery} (local DB mode active).`);
+  }
   const { baseUrl, apiKey } = baseUrlAndKey();
   const url = `${baseUrl}${pathWithQuery.startsWith("/") ? "" : "/"}${pathWithQuery}`;
 
@@ -267,6 +280,9 @@ export async function furpPostMultipart<T = any>(
   fields: Record<string, string>,
   attachment?: { buffer: Buffer; filename: string; contentType: string },
 ): Promise<FurpJsonResult<T>> {
+  if (!isRealFurpSubmitEnabled()) {
+    throw new Error(`Blocked external Staging POST submission to ${pathWithQuery} (local DB mode active).`);
+  }
   const { baseUrl, apiKey } = baseUrlAndKey();
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) form.append(k, v);

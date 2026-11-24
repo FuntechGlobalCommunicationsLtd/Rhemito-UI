@@ -15,7 +15,7 @@
 
 import type { Express, Request, Response } from "express";
 import { clientIpOf, rateLimit } from "./rateLimit";
-import { furpFetchJson, isRealFurpLiveEnabled, type FurpJsonResult } from "./furpClient";
+import { furpFetchJson, isRealFurpLiveEnabled, isRealFurpSubmitEnabled, type FurpJsonResult } from "./furpClient";
 
 // ─── Offline fixture: the verified July 2026 edition captured from furp02-staging ───────────────
 
@@ -181,7 +181,7 @@ export function registerMitoViewRoutes(app: Express): void {
         fail(res, 400, "Enter a valid email address.");
         return;
       }
-      if (!isRealFurpLiveEnabled()) {
+      if (!isRealFurpSubmitEnabled()) {
         ok(
           res,
           null,
@@ -210,7 +210,7 @@ export function registerMitoViewRoutes(app: Express): void {
       fail(res, 400, "This unsubscribe link is not valid.");
       return;
     }
-    if (!isRealFurpLiveEnabled()) {
+    if (!isRealFurpSubmitEnabled()) {
       if (token === "invalid-token") fail(res, 400, "This unsubscribe link is not valid or has expired.");
       else ok(res, null, "You have left the MitoView list.");
       return;

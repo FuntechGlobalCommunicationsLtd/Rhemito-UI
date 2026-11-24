@@ -54,6 +54,7 @@ import {
   initiateMitoHostedTransaction,
   initiateMitoPlaidRetailCollection,
   isMitoRetailConfigured,
+  isMitoStagingSubmitEnabled,
   lockMitoExchangeRate,
   recordMitoWebhookInspectorLog,
   registerOrSyncMitoRetailUser,
@@ -1058,6 +1059,14 @@ export function registerSendMoneyRoutes(app: Express): void {
    */
   app.post("/api/send-money/mito/card-session-submit", async (req: Request, res: Response) => {
     try {
+      if (!isMitoStagingSubmitEnabled()) {
+        return res.status(403).json({
+          error: {
+            code: "STAGING_SUBMIT_DISABLED",
+            message: "External Staging payment gateway submissions are disabled (local DB mode active).",
+          },
+        });
+      }
       const sessionId = String(req.body?.sessionId || "").trim();
       const sessionSecret = String(req.body?.sessionSecret || "").trim();
       const sessionData = String(req.body?.sessionData || req.body?.session_data || "").trim();
@@ -1667,7 +1676,7 @@ export function registerSendMoneyRoutes(app: Express): void {
     userId: string,
     req: Request,
   ): Promise<Partial<SendMoneyTransaction>> {
-    if (!isMitoRetailConfigured()) return {};
+    if (!isMitoStagingSubmitEnabled()) return {};
     try {
       let mitoUserId = tx.mitoUserId ?? null;
       const authUser = await storage.getAuthUserById(userId);
@@ -1811,7 +1820,7 @@ export function registerSendMoneyRoutes(app: Express): void {
     promoAtPayment?: promo.PromoAtPayment | null,
     bonusAtPayment?: bonus.BonusAtPayment | null,
   ): Promise<Partial<SendMoneyTransaction> & { _mitoGatewayMessage?: string | null }> {
-    if (!isMitoRetailConfigured()) return {};
+    if (!isMitoStagingSubmitEnabled()) return {};
     try {
       const authUser = await storage.getAuthUserById(userId);
       const mitoUserId =
@@ -2200,12 +2209,12 @@ export function registerSendMoneyRoutes(app: Express): void {
         throw new SendMoneyError(400, "VALIDATION_ERROR", firstZodMessage(parsed.error));
       }
       const isMitoStep4Reclick =
-        isMitoRetailConfigured() &&
+        isMitoStagingSubmitEnabled() &&
         tx.status === "completed" &&
         Boolean(tx.mitoPaymentSession || tx.mitoPaymentUrl || tx.mitoTransactionId);
 
       const hasPriorStep4Reservation =
-        (tx.status === "awaiting_payment" || (isMitoRetailConfigured() && tx.status === "pending")) &&
+        (tx.status === "awaiting_payment" || (isMitoStagingSubmitEnabled() && tx.status === "pending")) &&
         Boolean(
           tx.paymentMethod ||
             tx.promoRedeemedAt ||
@@ -2405,7 +2414,7 @@ export function registerSendMoneyRoutes(app: Express): void {
 
       let hasDeferredGatewaySession = false;
       if (
-        isMitoRetailConfigured() &&
+        isMitoStagingSubmitEnabled() &&
         (parsed.data.paymentMethod === "card" || parsed.data.paymentMethod === "instant_bank")
       ) {
         const hasValidGatewayTarget =
@@ -2568,7 +2577,7 @@ export function registerSendMoneyRoutes(app: Express): void {
         }
 
         let effectivePaymentRef = paymentRef;
-        if (tx.paymentMethod === "card" && isMitoRetailConfigured()) {
+        if (tx.paymentMethod === "card" && isMitoStagingSubmitEnabled()) {
           const directCkoId = [paymentId || "", sessionId || ""]
             .map((v) => v.trim())
             .find((v) => /^(pay_|sid_)/i.test(v));
@@ -2578,7 +2587,7 @@ export function registerSendMoneyRoutes(app: Express): void {
             effectivePaymentRef = paymentId || resolvedPayId;
             await syncMitoCardPaymentStatus(resolvedPayId);
           }
-        } else if (tx.paymentMethod === "instant_bank" && isMitoRetailConfigured()) {
+        } else if (tx.paymentMethod === "instant_bank" && isMitoStagingSubmitEnabled()) {
           const hostedPartnerRef =
             typeof (tx.mitoHostedPayload as Record<string, unknown> | undefined)?.PartnerReferenceNumber === "string"
               ? String((tx.mitoHostedPayload as Record<string, unknown>).PartnerReferenceNumber).trim()

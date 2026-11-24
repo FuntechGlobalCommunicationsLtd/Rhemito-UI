@@ -355,3 +355,21 @@
      - Repaired upstream Mito `deleteMitoBeneficiary` (`GET /api/v1/mito/Beneficiaries/DeleteBeneficiary?beneficiaryId=...`) and `updateMitoBeneficiary` (`POST /api/v1/mito/Beneficiaries/UpdateBeneficiary`) while retaining `.dev-state` fallback.
      - Added `POST /api/send-money/mito/bank-details`, `GET /api/send-money/mito/validate-nickname`, `GET /api/send-money/mito/provinces` (`Static/ProvinceState`), `Static/Providers` `local` vs `international` classification, full field forwarding on beneficiary create/update, and static corridor requirement templates (`shared/beneficiaryRequirements.ts`).
   4. **Superseded Behaviour:** Earlier 4-step `/send-money` stepper (combining Recipient + Bank without `Summary` step), modal-only `Add recipient` / `View` / `Edit` dialogs in `RecipientsPanel.tsx`, required `Email` in standalone recipient creation, and wrong HTTP verbs on upstream Mito beneficiary update/delete superseded by `DEC-2026-11-19-BENEFICIARY-JOURNEY-PARITY`.
+
+
+---
+
+### `DEC-2026-11-24-DISABLE-STAGING-SUBMISSIONS` — Block External Mito/Rhemito Staging Write Submissions & Store Locally (`Option 2`)
+- **Date Approved:** 24 November 2026 (`2026-11-24`)
+- **Decision Owner / Approver:** Mohammad Mumtaz (Product Owner — explicitly approved `Option 2: USE Our own GIT and DB for storing no external push to Mito, Rhemito` on `disable_mito_rhemito_staging`)
+- **Status:** `Verified` (`Option 2` — `0` TypeScript errors, `340/340` Vitest tests including `5/5` new `staging-submit-guard.test.ts` & `7/7` `gateway-confirmation.test.ts`; pending local UI confirmation and explicit `git push` approval)
+- **Affected Files (`Rhemito-UI`):** `server/mitoRetail/index.ts`, `server/furpClient.ts`, `server/supportRoutes.ts`, `server/mitoViewRoutes.ts`, `server/complianceRoutes.ts`, `server/sendMoneyRoutes.ts`, `client/src/lib/furpApiAdapter.ts`, `client/src/__tests__/staging-submit-guard.test.ts`, `docs/governance/decisions.md`, `docs/governance/traceability.md`
+- **Summary:**
+  1. **Default-Off External Staging Submit Guard (`isMitoStagingSubmitEnabled()`, `isRealFurpSubmitEnabled()`):**
+     - Added `isMitoStagingSubmitEnabled()` in `server/mitoRetail/index.ts` (default `false` in dev and production unless `ALLOW_EXTERNAL_STAGING_SUBMIT=1` is explicitly set) and `isRealFurpSubmitEnabled()` in `server/furpClient.ts`.
+     - Blocked all external write/submit mutations to Mito/FURP Staging (`Users`, `Users/UpdateUser`, `Beneficiaries` create/update/delete, `Rate/validateRate` & `Exchange/rates` lock, `Transaction/SendMoney`, `InitiateHostedTransaction`, `Journey`, `CheckoutPaymentSatus`, `PaymentConfirmation`, `MoveRetailToTransaction`, `api.sandbox.checkout.com` session submit, Support ticket create/reply/mark-read, MitoView subscribe/unsubscribe/confirm, and Compliance `POST /api/v1/Journey`).
+     - Added defense-in-depth write blocks in `furpFetchJson` / `furpPostMultipart` (`server/furpClient.ts`) and cross-origin external Staging host write blocks in `client/src/lib/furpApiAdapter.ts`.
+  2. **Local DB Storage & Read-Only Preservation:**
+     - All beneficiaries, Send Money transactions, payments, Support tickets/replies, and MitoView subscriptions are stored strictly in our own local DB / storage (and `Rhemito-UI` ↔ `PromoCode` rewards sync stays intact).
+     - Read-only `GET` lookups (corridor rates, providers, requirements, provinces, lookup types, FAQs, MitoView posts, Compliance profile/KYC status, bank details lookup) remain available when configured.
+  3. **Superseded Behaviour:** Earlier live Staging submission behaviour from `DEC-2026-11-17-STAGING-PAYMENT-GATEWAY`, `DEC-2026-11-17-PAY-BY-BANK-RETAIL-SETTLEMENT`, `DEC-2026-11-18-MITOVIEW-AND-REAL-FURP-APIS`, `DEC-2026-11-18-COMPLIANCE-REFERENCE-LAYOUT`, and `DEC-2026-11-19-BENEFICIARY-JOURNEY-PARITY` is now gated behind explicit opt-in (`ALLOW_EXTERNAL_STAGING_SUBMIT=1`) and disabled by default.

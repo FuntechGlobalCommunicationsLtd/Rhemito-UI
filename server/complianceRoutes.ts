@@ -25,6 +25,7 @@ import {
   furpFetchJson,
   getCustomerFurpToken,
   isRealFurpLiveEnabled,
+  isRealFurpSubmitEnabled,
   type FurpJsonResult,
 } from "./furpClient";
 
@@ -206,7 +207,7 @@ async function liveOverview(
 
   const out: ComplianceOverviewResponse = { source: "furp", profile, kyc, journeyRecommended };
 
-  if (journeyRecommended && profile.uid && returnUrl) {
+  if (journeyRecommended && profile.uid && returnUrl && isRealFurpSubmitEnabled()) {
     // Best-effort: launch the journey for the customer's OWN FURP identity (never the partner sub-user).
     try {
       const j = await furpFetchJson("/api/v1/Journey", {

@@ -344,6 +344,25 @@ export function unwrapFurpResult<T>(
   return envelope as T;
 }
 
+const EXTERNAL_STAGING_HOST_RE =
+  /(^|\.)(funtechcom\.com|staging-admin\.mito\.money|staging\.mito\.money|staging\.rhemito\.com)$/i;
+
+function isBlockedExternalStagingSubmit(method: "GET" | "POST", baseUrl: string): boolean {
+  if (method === "GET") return false;
+  if (!/^https?:\/\//i.test(baseUrl)) return false;
+  const allowOverride =
+    typeof import.meta !== "undefined" && import.meta.env
+      ? (import.meta.env.VITE_ALLOW_EXTERNAL_STAGING_SUBMIT as string | undefined)
+      : undefined;
+  if (allowOverride === "1") return false;
+  try {
+    const host = new URL(baseUrl).hostname;
+    return EXTERNAL_STAGING_HOST_RE.test(host);
+  } catch {
+    return false;
+  }
+}
+
 async function requestFurp<T>(
   method: "GET" | "POST",
   relativePath: string,
@@ -351,6 +370,13 @@ async function requestFurp<T>(
   options: FurpRequestOptions = {},
 ): Promise<T> {
   const baseUrl = resolveFurpBaseUrl(options.baseUrl);
+  if (isBlockedExternalStagingSubmit(method, baseUrl)) {
+    throw new FurpApiError(
+      "External Staging submissions are disabled (local DB mode active).",
+      403,
+      "STAGING_SUBMIT_DISABLED",
+    );
+  }
   const cleanPath = relativePath.replace(/^\/+/, "");
   const isCrossOrigin = /^https?:\/\//i.test(baseUrl);
   const res = await fetch(`${baseUrl}${cleanPath}`, {
